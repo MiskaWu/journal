@@ -1,0 +1,101 @@
+#!/bin/sh
+# journal —— 個人工作的可觀測性
+#
+# 硬依賴只有 sh / git / claude。本機 /bin/sh 是 dash，所以：
+#   不准 [[ ]]、不准陣列、不准 $'...'、不准 local -a、不准 <<< 。
+# 設計與交接規格：docs/DESIGN.md（唯一 source of truth）
+
+set -u
+
+JR_ROOT=''
+
+_bootstrap() {
+	_self=$0
+	_n=0
+	while [ -L "$_self" ]; do
+		_n=$((_n + 1))
+		[ "$_n" -gt 32 ] && { printf 'journal: symlink 繞太多圈\n' >&2; exit 1; }
+		if command -v readlink >/dev/null 2>&1; then
+			_l=$(readlink "$_self")
+		else
+			_l=$(ls -ld "$_self" | sed 's/.*-> //')
+		fi
+		case $_l in
+			/*) _self=$_l ;;
+			*)  _self=$(dirname "$_self")/$_l ;;
+		esac
+	done
+	JR_ROOT=$( CDPATH='' cd -P "$(dirname "$_self")/.." && pwd )
+}
+_bootstrap
+
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup init doctor; do
+	# shellcheck source=/dev/null
+	. "$JR_ROOT/lib/$_lib.sh"
+done
+export JR_ROOT
+
+# 暫存區。$TMPDIR 若不可寫就退到 /tmp —— 有些 timer 環境的 TMPDIR 是空的。
+JR_TMPDIR=${TMPDIR:-/tmp}/journal.$$
+mkdir -p "$JR_TMPDIR" 2>/dev/null || { JR_TMPDIR=/tmp/journal.$$; mkdir -p "$JR_TMPDIR"; }
+export JR_TMPDIR
+trap 'rm -rf "$JR_TMPDIR"; jr_lock_release 2>/dev/null' EXIT INT TERM
+
+jr_usage() {
+	cat <<EOF
+journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能回憶、能量測的日誌
+
+用法：journal <指令> [選項]
+
+已實作（P1 · log 層）
+  init --local [--host-id ID] [--data-dir DIR]
+                          單機納管：建資料 repo 骨架、寫本機身分、接上 CLI
+  doctor [--check]        環境自檢。--check 只報告不等輸入（timer / hook 走這條）
+  rollup [DATE] [--dry-run] [--no-commit]
+                          重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
+  show [DATE]             印出當日 daily 檔
+  version                 版本
+
+尚未實作（見 docs/DESIGN.md §14）
+  capture <session>       P2 · 即時層（SessionEnd hook）
+  check                   P3 · SLI
+  aggregate / render      P5 · 中心
+  hosts / revoke / uninstall / digest / trace / progress
+
+環境變數
+  JOURNAL_REDUCER=awk|python3|node   強制指定減量路徑（驗收用）
+  JOURNAL_DEBUG=1                    印出診斷訊息
+  JR_CLAUDE_TIMEOUT=300              claude -p 的逾時秒數
+EOF
+}
+
+jr_cmd_show() {
+	jr_load_host
+	_d=${1:-$(jr_today)}
+	jr_date_valid "$_d" || jr_die "日期格式要 YYYY-MM-DD，收到：$_d"
+	_f=$(jr_daily_path "$_d")
+	[ -f "$_f" ] || jr_die "沒有 $_f —— 先跑 journal rollup $_d"
+	cat "$_f"
+}
+
+jr_not_yet() {
+	jr_err "\`journal $1\` 尚未實作 —— 那是 $2（見 docs/DESIGN.md §14）"
+	return 2
+}
+
+_cmd=${1:-help}
+[ $# -gt 0 ] && shift
+
+case $_cmd in
+	init)          jr_cmd_init "$@" ;;
+	doctor)        jr_cmd_doctor "$@" ;;
+	rollup)        jr_cmd_rollup "$@" ;;
+	show)          jr_cmd_show "$@" ;;
+	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
+	help|--help|-h) jr_usage ;;
+	capture)       jr_not_yet capture 'P2 · 即時層' ;;
+	check)         jr_not_yet check 'P3 · 目標／SLI' ;;
+	aggregate|render) jr_not_yet "$_cmd" 'P5 · 中心' ;;
+	hosts|revoke|uninstall|digest|trace|progress) jr_not_yet "$_cmd" 'P4／P5' ;;
+	*)             jr_err "未知指令：$_cmd"; jr_usage >&2; exit 1 ;;
+esac
