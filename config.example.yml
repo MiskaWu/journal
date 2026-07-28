@@ -1,0 +1,51 @@
+# journal 資料 repo 的設定檔 —— 複製成 journal-data/config.yml
+#
+# ⚠ 這不是完整 YAML。journal 只吃一個扁平子集（DESIGN §9：「格式是我們自己定的，
+#   定成扁平好剖析」），所以：
+#     · 頂層 key 必須頂格，`key: value`
+#     · 清單就是底下縮排的 `  - item`
+#     · 對映就是底下縮排的 `  sub: value`
+#   不支援錨點、多行字串、巢狀兩層以上。要放進來的東西請保持扁平。
+
+timezone: Asia/Taipei
+
+# 指定聚合者（P5 才會用到）。同時只能有一台，且不該是 WSL2 上的開發機。
+aggregator: ""
+
+# ---------------------------------------------------------------- git 素材
+#
+# 不填也能跑：當日 transcript 出現過的 cwd 會自動推出所屬 repo。
+# 這裡是「即使那天沒在裡面開 session 也要掃」的 repo。
+repos:
+  # - ~/projects/journal
+  # - /opt/infra
+
+# 算成「你」的 commit 作者。留空就用各 repo 自己的 git config user.email。
+# 不篩的話，一次 rebase 或 pull 就會把別人的 commit 灌進你的當天。
+git_authors:
+  # - miskawu@gmail.com
+
+# ---------------------------------------------------------------- slug 映射
+#
+# 同一個邏輯 repo 會有多個 slug —— 本機實測 14 個，dev-env-ansible 就散成
+# 本體加四個 `--claude-worktrees-*`。不映射的話同一件事會被當成四個專案。
+# 預設會由 cwd 推 git toplevel，通常已經對；這裡只放推不出來的例外。
+slug_map:
+  # -opt-infra: infra
+  # -home-miskawu-infra: infra
+
+# ---------------------------------------------------------------- 機密 gate
+#
+# 這個檔裡的**值**會被當字面字串掃描並 redact。檔不存在就靜靜跳過。
+secrets_file: /opt/infra/secrets.yml
+
+# 額外的 redact pattern（ERE）。內建已涵蓋 glpat- / gh?_ / AKIA / sk- / xox /
+# AIza / JWT / PEM 標頭 / 48+ 位 hex。
+#
+# ⚠ 長 hex 門檻刻意設在 48 而不是 40：SHA-1 commit hash 正好 40 個 hex，
+#   設 40 會把每一個 commit 參照都洗成 «REDACTED»。
+redact_patterns:
+  # - mycorp_[A-Za-z0-9]{24,}
+
+# ---------------------------------------------------------------- 生成
+claude_timeout: 300
