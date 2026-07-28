@@ -30,6 +30,7 @@
 | **O3** | `GOALS.md` 是否從 `/opt/infra/docs/decisions.md` 待辦段 + `entra-sso-runbook.md` 播草稿? | 是。**只能在 infra 機執行**,dev 機看不到那些檔。 |
 | **O5** | aggregator 指定哪台? | infra 機(24/7 常開)。**明確排除 dev 機**(WSL2 不常開)。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議在 `~/.claude/settings.json` 加 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,不代為決定。 |
+| **O8** | 程式碼 repo 要不要公開? | 預設**私有**。但它不含任何機密 —— 公開的話 bootstrap 變 trivial(`curl` 就能拿到腳本,雞生蛋問題消失),agent 也不需要唯讀金鑰。資料 repo **無論如何必須私有**。 |
 
 ## 已關閉
 
