@@ -29,7 +29,7 @@ _bootstrap() {
 }
 _bootstrap
 
-for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture init doctor; do
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli init doctor; do
 	# shellcheck source=/dev/null
 	. "$JR_ROOT/lib/$_lib.sh"
 done
@@ -59,10 +59,11 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   show [DATE]             印出當日 daily 檔（全文：早會 + 摘要 + 四段細節）
   standup [DATE]          只印早會層（站立會議要唸的短句；行數由 config 的 standup_lines 控制）
   brief [DATE]            只印回報層摘要（專案｜類型｜標籤｜一句話）
+  check [--no-commit]     跑本機能跑的 SLI → 寫 status/<host>.yml。requires 不滿足
+                          的目標標 na（不是 fail）。有 fail 時 exit 1
   version                 版本
 
 尚未實作（見 docs/DESIGN.md §14）
-  check                   P3 · SLI
   aggregate / render      P5 · 中心
   hosts / revoke / uninstall / digest / trace / progress
 
@@ -142,9 +143,9 @@ case $_cmd in
 	standup)       jr_cmd_standup "$@" ;;
 	brief)         jr_cmd_brief "$@" ;;
 	capture)       jr_cmd_capture "$@" ;;
+	check)         jr_cmd_check "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
-	check)         jr_not_yet check 'P3 · 目標／SLI' ;;
 	aggregate|render) jr_not_yet "$_cmd" 'P5 · 中心' ;;
 	hosts|revoke|uninstall|digest|trace|progress) jr_not_yet "$_cmd" 'P4／P5' ;;
 	*)             jr_err "未知指令：$_cmd"; jr_usage >&2; exit 1 ;;
