@@ -64,7 +64,7 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		printf 'goals_touched: bare\n\n## 完成\n- bare 模式完成\n## 拍板\n## 待續\n## 卡住\n' ;;
 	ok)
 		cat > /dev/null
-		printf 'goals_touched: proj-a, proj-b\n\n## 完成\n- 修好 utf8_trim（abc1234）\n## 拍板\n- 決定採 X 案\n## 待續\n- 還有 Y\n## 卡住\n' ;;
+		printf 'goals_touched: proj-a, proj-b\n\n## 摘要\n- proj-a | 修復 | proj-a | 冒煙測試抓到的 bug 已修\n- proj-b | 卡住 |  | 等待外部授權\n\n## 完成\n- 修好 utf8_trim（abc1234）\n## 拍板\n- 決定採 X 案\n## 待續\n- 還有 Y\n## 卡住\n' ;;
 	secret)
 		cat > /dev/null
 		printf 'goals_touched: proj-a\n\n## 完成\n- token 是 glpat-FAKEFAKEFAKE12345678 值 SuperSecretValue123 另 MYCORP_123456\n## 拍板\n## 待續\n## 卡住\n' ;;
@@ -234,6 +234,11 @@ a_grep 'frontmatter: reduced_by' "$DAILY" 'reduced_by: awk'
 a_grep 'frontmatter: status ok' "$DAILY" 'status: ok'
 a_grep '內文四段' "$DAILY" '## 卡住'
 a_grep '內文來自蒸餾' "$DAILY" '修好 utf8_trim（abc1234）'
+a_grep '摘要段落地' "$DAILY" '## 摘要'
+J brief 2026-07-15 > "$T/brief.out" 2>&1
+a_rc 'brief 指令成功' $? 0
+a_grep '  brief 印出摘要條目' "$T/brief.out" '冒煙測試抓到的 bug 已修'
+a_grep '  brief 欄位格式化（類型在前）' "$T/brief.out" '修復'
 a_eq '資料 repo 工作區乾淨（已 commit）' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
 a_eq '.spool 沒被 track' "$(git -C "$T/data" ls-files | grep -c spool)" '0'
 a_grep 'hosts 檔更新 reducer' "$T/data/hosts/testhost.yml" 'reducer: awk'
