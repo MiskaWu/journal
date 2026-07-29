@@ -52,6 +52,15 @@ jr_detect_os() {
 	esac
 }
 
+# 生成前先拉一次 —— 中心（config.yml）改的旋鈕（模型、力度…）要在這一輪
+# 就生效，而不是等 push 時才 rebase 進來。失敗不阻塞：離線照跑，用舊設定。
+jr_data_pull() {
+	git -C "$JR_DATA_DIR" remote get-url origin > /dev/null 2>&1 || return 0
+	GIT_TERMINAL_PROMPT=0 jr_timeout 20 \
+		git -C "$JR_DATA_DIR" pull --rebase -q 2>/dev/null \
+		|| jr_log 'pull 失敗（離線？）—— 用本地既有設定繼續'
+}
+
 jr_git_commit_data() {
 	_msg=$1
 	git -C "$JR_DATA_DIR" rev-parse --git-dir >/dev/null 2>&1 || {
@@ -97,6 +106,7 @@ jr_cmd_rollup() {
 
 	jr_require_tier0 --need-claude || exit 1
 	jr_load_host
+	jr_data_pull
 	JR_REDUCER=$(jr_pick_reducer)
 	export JR_REDUCER
 	jr_log "rollup $_date @ $JR_HOST（reducer=$JR_REDUCER）"

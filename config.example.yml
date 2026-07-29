@@ -50,6 +50,16 @@ redact_patterns:
 # ---------------------------------------------------------------- 生成
 claude_timeout: 300
 
+# 蒸餾用的模型（claude -p --model 的值：別名如 haiku/sonnet/opus 或完整型號）。
+# 留空 = 用該機 claude 的預設模型。這是「中心可控」的旋鈕（O9）：config.yml
+# 在資料 repo 裡，各機 pull 之後下一次生成就換模型。
+#
+# 兩顆分開，因為成本結構不同：
+#   capture 每關一個 session 跑一次（頻繁、素材小）→ 便宜模型很合理
+#   rollup 一天一次、整併全天素材 → 品質優先
+model_rollup: ""
+model_capture: ""
+
 # 早會層的力度旋鈕：站立會議口吻的短句最多幾行（1–10）。
 # 改了之後對「之後生成」的 daily 生效；舊的日子重跑 rollup 即套用。
 standup_lines: 3

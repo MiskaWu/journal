@@ -171,6 +171,8 @@ jr_cmd_capture() {
 	_out="$JR_TMPDIR/capture.out"
 	_err="$JR_TMPDIR/capture.err"
 	_timeout=${JR_CAPTURE_TIMEOUT:-180}
+	JR_CLAUDE_MODEL=$(jr_pick_model model_capture)
+	export JR_CLAUDE_MODEL
 
 	if ! jr_claude_run "$_sys" "$(jr_capture_prompt)" "$_material" "$_out" "$_err" "$_timeout"; then
 		jr_err "capture: 蒸餾失敗（session $_session）—— 留給 L2"

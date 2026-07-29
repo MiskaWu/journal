@@ -44,6 +44,8 @@ jr_claude_try() {
 	if [ "$_mode" = 'full' ]; then
 		set -- "$@" --tools '' --no-session-persistence --safe-mode \
 			--system-prompt "$(cat "$_sysf")"
+		# 模型旋鈕只在 full 模式帶 —— bare 是「最小可動」的保底，不多帶任何旗標
+		[ -n "${JR_CLAUDE_MODEL:-}" ] && set -- "$@" --model "$JR_CLAUDE_MODEL"
 	else
 		# 連 --system-prompt 都不敢假設，直接併進使用者訊息
 		_pr="$(cat "$_sysf")
@@ -164,9 +166,18 @@ goals_touched: 用逗號分隔的短代號，取自當天實際碰到的專案�
 EOF
 }
 
+# 模型解析：環境變數（一次性覆寫）> config（中心可控）> 空（該機預設）
+jr_pick_model() {
+	# jr_pick_model CONFIG_KEY
+	if [ -n "${JOURNAL_MODEL:-}" ]; then printf '%s' "$JOURNAL_MODEL"; return 0; fi
+	jr_yaml_get "${JR_CONFIG_YML:-}" "$1" ''
+}
+
 # jr_distill DATE HOST MATERIAL_FILE OUTFILE —— 成功回 0；失敗回非 0 且 OUTFILE 為空
 jr_distill() {
 	_date=$1; _host=$2; _material=$3; _out=$4
+	JR_CLAUDE_MODEL=$(jr_pick_model model_rollup)
+	export JR_CLAUDE_MODEL
 
 	if [ ! -s "$_material" ]; then
 		jr_debug '素材是空的，不呼叫 claude'
