@@ -264,7 +264,7 @@ $ journal doctor
 
   加速器（缺少會降級，不影響正確性）────────
   ❌ node
-  ❌ python3     → 減量將以 awk 粗篩，token 約增 3–5 倍
+  ❌ python3     → 減量將以 awk 粗篩，蒸餾忠實度較低
 
   執行環境 ─────────────────────────────────
   ✅ systemd     user bus running

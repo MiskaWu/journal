@@ -48,7 +48,7 @@ jr_cmd_doctor() {
 	else jr_doctor_row warn python3 '缺'; _advice=$((_advice + 1)); fi
 	_r=$(jr_pick_reducer)
 	if [ "$_r" = 'awk' ]; then
-		jr_doctor_row warn reducer    'awk 粗篩 → token 約增 3–5 倍'
+		jr_doctor_row warn reducer    'awk 粗篩 → 無工具參數提示，蒸餾忠實度較低'
 	else
 		jr_doctor_row ok reducer    "$_r"
 	fi
