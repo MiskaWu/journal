@@ -53,7 +53,8 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   doctor [--check]        環境自檢。--check 只報告不等輸入（timer / hook 走這條）
   rollup [DATE] [--dry-run] [--no-commit]
                           重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
-  show [DATE]             印出當日 daily 檔
+  show [DATE]             印出當日 daily 檔（全文：摘要 + 四段細節）
+  brief [DATE]            只印回報層摘要（專案｜類型｜標籤｜一句話）
   version                 版本
 
 尚未實作（見 docs/DESIGN.md §14）
@@ -78,6 +79,33 @@ jr_cmd_show() {
 	cat "$_f"
 }
 
+# 回報層：只印摘要段，欄位對齊。細節要看全文用 show。
+jr_cmd_brief() {
+	jr_load_host
+	_d=${1:-$(jr_today)}
+	jr_date_valid "$_d" || jr_die "日期格式要 YYYY-MM-DD，收到：$_d"
+	_f=$(jr_daily_path "$_d")
+	[ -f "$_f" ] || jr_die "沒有 $_f —— 先跑 journal rollup $_d"
+	awk '
+		/^## 摘要/ { inside = 1; next }
+		/^## /     { inside = 0 }
+		inside && /^- / {
+			line = substr($0, 3)
+			n = split(line, f, /[ \t]*\|[ \t]*/)
+			if (n >= 4) {
+				tag = (f[3] == "" ? "" : "  #" f[3])
+				printf "%-4s %-18s %s%s\n", f[2], f[1], f[4], tag
+			} else {
+				print line
+			}
+			found = 1
+		}
+		END { if (!found) {
+			print "（這天的 daily 沒有摘要段 —— 舊格式或無素材；journal rollup " d " 可重生成）"
+		} }
+	' d="$_d" "$_f"
+}
+
 jr_not_yet() {
 	jr_err "\`journal $1\` 尚未實作 —— 那是 $2（見 docs/DESIGN.md §14）"
 	return 2
@@ -91,6 +119,7 @@ case $_cmd in
 	doctor)        jr_cmd_doctor "$@" ;;
 	rollup)        jr_cmd_rollup "$@" ;;
 	show)          jr_cmd_show "$@" ;;
+	brief)         jr_cmd_brief "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
 	capture)       jr_not_yet capture 'P2 · 即時層' ;;

@@ -456,6 +456,8 @@ goals_touched: [gitlab-runner, journal-system]   # 模型推斷，可改
 generated_by: rollup        # rollup（L2 定稿）| capture（L1 即時碎片）
 reduced_by: awk             # node | python3 | awk
 ---
+## 摘要
+- infra | 功能 | gitlab-runner | k3s executor 的 runner 骨架完成並可註冊
 ## 完成
 - k3s executor 的 gitlab-runner 骨架 + wiring（commit 0fa72f5）
 ## 拍板
@@ -463,7 +465,9 @@ reduced_by: awk             # node | python3 | awk
 ## 卡住
 ```
 
-四段固定:**完成 / 拍板 / 待續 / 卡住**。`generated_by` 分辨即時碎片與整併定稿;`reduced_by` 讓你事後知道那天是不是降級跑的 —— 摘要品質有落差時查得到原因。
+**兩層閱讀(D19)**:`## 摘要` 是回報層 —— 組長視角,只讀這段就知道當天產出了什麼價值、各專案進度在哪、哪裡有紅燈。逐條格式固定為 `專案 | 類型 | 標籤 | 一句話`,類型五選一(功能/修復/進度/拍板/卡住),門檻是「成果可見」,全天 5–8 行。**分組軸不烤進文字**:按專案、按標籤、按類型都是同一份資料在檢視時的樞紐(`journal brief` 與 render 出的頁面做分組,資料本身不動)。
+
+四段固定:**完成 / 拍板 / 待續 / 卡住** —— 這是細節層,想知道詳細才點開。`generated_by` 分辨即時碎片與整併定稿;`reduced_by` 讓你事後知道那天是不是降級跑的 —— 摘要品質有落差時查得到原因。
 
 ### `status/<host>.yml`
 
