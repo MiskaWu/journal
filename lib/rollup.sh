@@ -176,6 +176,9 @@ jr_cmd_rollup() {
 	jr_write_atomic "$_daily" < "$_draft"
 	jr_ok "寫入 $_daily"
 
+	# L2 重讀過當天全部原始資料 —— spool 裡 L1 沒做完的這下也被涵蓋了
+	jr_spool_mark_all "$_date"
+
 	jr_update_host_yml
 
 	jr_lock_release

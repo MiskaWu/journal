@@ -9,21 +9,24 @@
 | 項目 | 狀態 |
 |---|---|
 | 設計 | 已定案(v5),見 [`docs/DESIGN.md`](docs/DESIGN.md) —— **本 repo 自足,不需外部連結** |
-| 實作 | **P1 · log 層已完成**(`init --local` / `doctor --check` / `rollup`)。P2–P5 未動工 |
+| 實作 | **P1 log 層 + P2 即時層已完成**。裝好後 session 一關自動記錄(L1),每晚自動整併(L2)。P3–P5 未動工 |
 | 待拍板 | O3(GOALS 播種)· O5(aggregator 指定)· O7(transcript 保留期)· O8(程式碼 repo 公開與否) |
 
 ## 現在能做什麼
 
 ```sh
-./install.sh                    # = journal init --local，建資料 repo 骨架、接上 CLI
+./install.sh                    # = journal init --local：資料 repo 骨架、CLI、
+                                #   SessionEnd hook、夜間 timer 一次裝好（冪等）
+journal standup [DATE]          # 早會要唸的短句（行數由 config 的 standup_lines 控制）
+journal brief [DATE]            # 組長視角摘要（專案｜類型｜標籤｜一句話）
+journal show [DATE]             # 全文：早會 + 摘要 + 四段細節
+journal rollup [DATE]           # 手動整併／補跑任意日期（冪等）
 journal doctor --check          # 環境自檢，以 exit code 表示
-journal rollup --dry-run        # 只看素材，不呼叫 claude
-journal rollup [YYYY-MM-DD]     # 產出當日 daily 檔（冪等，可補跑任意日期）
-journal show [YYYY-MM-DD]       # 印出當日 daily 檔
 ```
 
-P1 只做**單機、離線也成立**的那一層:沒有 remote、沒有 timer、沒有 `SessionEnd`
-hook。要跑就手動跑 `rollup`。
+裝好之後就不用管它:每關一個 Claude session,`SessionEnd` hook 背景蒸餾該
+session 追進當日檔(L1,秒級返回不卡關窗);每晚 timer 重讀全天素材整併定稿
+(L2,`Persistent=true` 錯過補跑)。多機聚合與中心視圖是 P4/P5。
 
 ## 它解決什麼
 

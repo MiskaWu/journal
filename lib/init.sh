@@ -101,6 +101,106 @@ jr_link_bin() {
 	esac
 }
 
+# 註冊 SessionEnd hook 到 Claude Code 的 settings.json（冪等）
+# JSON 合併要真剖析器：jq > python3 > 印手動片段。awk 改 JSON 是自找 corrupt。
+jr_install_hook() {
+	_settings="$JR_CLAUDE_HOME/settings.json"
+	_cmd="$JR_ROOT/hooks/session-end.sh"
+
+	if [ -f "$_settings" ] && grep -qF 'hooks/session-end.sh' "$_settings"; then
+		jr_ok 'SessionEnd hook 已註冊'
+		return 0
+	fi
+
+	if jr_has jq; then
+		jr_backup "$_settings"
+		[ -f "$_settings" ] || printf '{}\n' > "$_settings"
+		if jq --arg cmd "$_cmd" \
+			'.hooks.SessionEnd = ((.hooks.SessionEnd // []) + [{"hooks":[{"type":"command","command":$cmd}]}])' \
+			"$_settings" > "$_settings.tmp.$$"; then
+			mv -f "$_settings.tmp.$$" "$_settings"
+			jr_ok "SessionEnd hook 已註冊（jq）→ $_settings"
+		else
+			rm -f "$_settings.tmp.$$"
+			jr_err 'jq 合併失敗，settings.json 未動'
+			return 1
+		fi
+	elif jr_has python3; then
+		jr_backup "$_settings"
+		JR_HOOK_SETTINGS="$_settings" JR_HOOK_CMD="$_cmd" python3 - <<'PY' || { jr_err 'python3 合併失敗'; return 1; }
+import json, os
+path, cmd = os.environ['JR_HOOK_SETTINGS'], os.environ['JR_HOOK_CMD']
+data = {}
+if os.path.exists(path):
+    with open(path, encoding='utf-8') as fh:
+        data = json.load(fh)
+hooks = data.setdefault('hooks', {}).setdefault('SessionEnd', [])
+hooks.append({'hooks': [{'type': 'command', 'command': cmd}]})
+tmp = path + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as fh:
+    json.dump(data, fh, ensure_ascii=False, indent=2)
+    fh.write('\n')
+os.replace(tmp, path)
+PY
+		jr_ok "SessionEnd hook 已註冊（python3）→ $_settings"
+	else
+		jr_warn '沒有 jq / python3，不敢用文字工具改 JSON —— 請把這段手動合併進 settings.json：'
+		cat >&2 <<EOF
+  "hooks": {
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "$_cmd" } ] }
+    ]
+  }
+EOF
+		return 1
+	fi
+}
+
+# 安裝 L2 夜間 timer（systemd user unit，Persistent=true 是 WSL2 的命脈 D11）
+jr_install_timer() {
+	if [ -n "${JOURNAL_NO_TIMER:-}" ]; then
+		jr_log '（JOURNAL_NO_TIMER 設定中，跳過 timer 安裝）'
+		return 0
+	fi
+	if ! jr_has systemctl || ! systemctl --user show-environment > /dev/null 2>&1; then
+		jr_warn 'systemd user bus 不可用，跳過 timer —— 請自行排程每日 journal rollup'
+		return 0
+	fi
+
+	_when=$(jr_yaml_get "$JR_CONFIG_YML" rollup_time '21:30')
+	case $_when in
+		[0-2][0-9]:[0-5][0-9]) ;;
+		*) jr_warn "rollup_time 格式不對（$_when），用 21:30"; _when='21:30' ;;
+	esac
+
+	_unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+	mkdir -p "$_unitdir"
+	cat > "$_unitdir/journal-rollup.service" <<EOF
+[Unit]
+Description=journal L2 nightly rollup
+
+[Service]
+Type=oneshot
+ExecStart=$HOME/.local/bin/journal rollup
+EOF
+	cat > "$_unitdir/journal-rollup.timer" <<EOF
+[Unit]
+Description=journal L2 nightly rollup timer
+
+[Timer]
+OnCalendar=*-*-* $_when:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+	systemctl --user daemon-reload
+	systemctl --user enable --now journal-rollup.timer > /dev/null 2>&1 \
+		&& jr_ok "timer 已啟用：每日 $_when（Persistent=true，錯過補跑）" \
+		|| jr_warn 'timer enable 失敗 —— systemctl --user enable --now journal-rollup.timer 手動跑一次看錯誤'
+}
+
 jr_cmd_init() {
 	_local=0
 	_host_id=''
@@ -178,11 +278,17 @@ EOF
 		git -C "$_data_dir" -c user.name="journal" -c user.email="journal@$_host_id" \
 			commit -q -m "journal: 註冊主機 $_host_id"
 
+	# 7) L1：SessionEnd hook（P2）
+	jr_install_hook || true
+
+	# 8) L2：夜間 timer（P2）
+	jr_install_timer || true
+
 	jr_info ''
-	jr_info '完成。下一步：'
-	jr_info '  journal rollup --dry-run    # 只看素材，不呼叫 claude'
-	jr_info '  journal rollup              # 產出今天的 daily 檔'
-	jr_info ''
-	jr_warn 'P1 沒有裝 timer 與 SessionEnd hook（那是 P2/P4），現在請手動跑 rollup。'
+	jr_info '完成。之後 session 一關就會自動記錄（L1），每晚自動整併（L2）。'
+	jr_info '手動指令：'
+	jr_info '  journal standup             # 早會要唸的'
+	jr_info '  journal rollup [DATE]       # 手動整併／補跑'
+	jr_info '  journal doctor --check      # 自檢'
 	return 0
 }

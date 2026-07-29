@@ -53,3 +53,8 @@ claude_timeout: 300
 # 早會層的力度旋鈕：站立會議口吻的短句最多幾行（1–10）。
 # 改了之後對「之後生成」的 daily 生效；舊的日子重跑 rollup 即套用。
 standup_lines: 3
+
+# L2 夜間整併的時間（HH:MM，本機時區）。挑「你通常還開著機」的時段而非深夜 ——
+# WSL2 關機時 timer 不存在，錯過靠 Persistent=true 下次開機補跑。
+# 改了要重跑 `journal init --local` 讓 timer 重寫。
+rollup_time: "21:30"

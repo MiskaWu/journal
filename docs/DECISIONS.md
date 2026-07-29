@@ -31,7 +31,8 @@
 | **O3** | `GOALS.md` 是否從 `/opt/infra/docs/decisions.md` 待辦段 + `entra-sso-runbook.md` 播草稿? | 是。**只能在 infra 機執行**,dev 機看不到那些檔。 |
 | **O5** | aggregator 指定哪台? | infra 機(24/7 常開)。**明確排除 dev 機**(WSL2 不常開)。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議在 `~/.claude/settings.json` 加 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,不代為決定。 |
-| **O8** | 程式碼 repo 要不要公開? | 預設**私有**。但它不含任何機密 —— 公開的話 bootstrap 變 trivial(`curl` 就能拿到腳本,雞生蛋問題消失),agent 也不需要唯讀金鑰。資料 repo **無論如何必須私有**。 |
+| **O8** | 程式碼 repo 要不要公開? | ~~預設私有~~ → **已實質定案為公開**(2026-07-29 推上 GitHub 時使用者建為 public repo)。 |
+| **O9** | **中心 web 的可控旋鈕怎麼實作?** | 需求(2026-07-29 使用者明示):今天引入的可控項 —— `standup_lines`(早會力度)、摘要分組軸、價值門檻(未來)—— **都要能從中心 web 調整**,之後新增的旋鈕一律比照。分兩類:**檢視類**(分組軸、展開狀態)純前端 localStorage 即可,零張力;**生成類**(`standup_lines`、門檻)要寫回資料 repo 的 `config.yml`,與鐵律 4(不建控制平面)有張力。P5 拍板實作路徑,候選:①中心頁放設定表單,產生一行指令由人貼到任一台執行;②**直接連到 git provider 的 config.yml 網頁編輯**(零新服務,aggregator 本來就會 pull —— 預設傾向);③aggregator 上極小的寫入端點(限內網,最重,最後手段)。 |
 
 ## 已關閉
 

@@ -112,7 +112,8 @@
 | **O3** | `GOALS.md` 是否從 `/opt/infra/docs/decisions.md` 待辦段 + `entra-sso-runbook.md` 播草稿? | 是。**只能在 infra 機執行**。 |
 | **O5** | aggregator 指定哪台? | infra 機。**明確排除 dev 機**。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,**不代為決定**。 |
-| **O8** | **程式碼 repo 要不要公開?** | 預設**私有**。但它不含任何機密,公開的話 bootstrap 變 trivial(`curl` 就能拿到)、agent 也不需要唯讀金鑰。見 §8。 |
+| **O8** | **程式碼 repo 要不要公開?** | **已定案:公開**(2026-07-29 推上 GitHub)。bootstrap 因此變 trivial。 |
+| **O9** | **中心 web 的可控旋鈕**(P5) | 使用者需求:`standup_lines`、摘要分組軸、價值門檻等可控項**都要能從中心 web 調**。檢視類走前端;生成類要寫回 `config.yml` —— 預設傾向「中心頁直連 git provider 的檔案編輯頁」,零新服務不違鐵律 4。細節見 DECISIONS O9。 |
 
 已關閉:O1(GitHub)、O2(→D15)、O4(progress.md + 靜態頁)、O6(不做 SQLite)。
 
