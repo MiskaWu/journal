@@ -18,3 +18,7 @@ host.yml
 *~
 .idea/
 .vscode/
+
+# python 語法檢查的產物
+__pycache__/
+*.pyc
