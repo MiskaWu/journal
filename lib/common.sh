@@ -135,16 +135,17 @@ jr_yaml_section() {
 # ---------------------------------------------------------------- 本機身分
 
 jr_load_host() {
-	[ -f "$JR_HOST_YML" ] || jr_die "找不到 $JR_HOST_YML —— 先跑一次 'journal init --local'"
+	[ -f "$JR_HOST_YML" ] || jr_die "找不到 $JR_HOST_YML —— 先跑一次 'journal init'"
 	JR_HOST=$(jr_yaml_get "$JR_HOST_YML" host)
 	JR_DATA_DIR=$(jr_yaml_get "$JR_HOST_YML" data_dir)
 	JR_CODE_DIR=$(jr_yaml_get "$JR_HOST_YML" code_dir "$JR_ROOT")
+	JR_ROLE=$(jr_yaml_get "$JR_HOST_YML" role node)
 	[ -n "$JR_HOST" ] || jr_die "$JR_HOST_YML 缺 host"
 	[ -n "$JR_DATA_DIR" ] || jr_die "$JR_HOST_YML 缺 data_dir"
 	[ -d "$JR_DATA_DIR" ] || jr_die "資料目錄不存在：$JR_DATA_DIR"
 	JR_CONFIG_YML="$JR_DATA_DIR/config.yml"
 	JR_SPOOL="$JR_DATA_DIR/.spool"
-	export JR_HOST JR_DATA_DIR JR_CODE_DIR JR_CONFIG_YML JR_SPOOL
+	export JR_HOST JR_DATA_DIR JR_CODE_DIR JR_CONFIG_YML JR_SPOOL JR_ROLE
 }
 
 # ---------------------------------------------------------------- 依賴分層（§9）

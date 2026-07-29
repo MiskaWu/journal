@@ -521,6 +521,83 @@ a_ngrep '<!-- --> 區塊不執行' "$STATUS" 'g-commented'
 a_grep 'agent_health 一併寫入' "$STATUS" 'agent_health: ok'
 a_eq  'check 結果已 commit' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
 
+# ================================================================ 9 · 納管（P4）
+
+printf '\n== 9 · 納管 ==\n'
+
+# 端到端自檢：拿本地 bare repo 當 origin，全鏈真 push
+git init -q --bare "$T/origin.git"
+MODE=ok J init --data-remote "$T/origin.git" > "$T/init-full.log" 2>&1
+a_rc '完整 init（含端到端自檢）成功' $? 0
+a_grep '  自檢真的跑了' "$T/init-full.log" '端到端自檢通過'
+a_eq  '  遠端與本地同步' "$(git -C "$T/data" rev-parse HEAD)" "$(git --git-dir "$T/origin.git" rev-parse HEAD 2>/dev/null || git -C "$T/origin.git" rev-parse HEAD)"
+if git --git-dir "$T/origin.git" log --format=%s | grep -qF 'selfcheck 還原'; then
+	ok '  自檢檔已還原（遠端也乾淨）'
+else
+	bad '  自檢檔已還原（遠端也乾淨）' '沒看到還原 commit'
+fi
+[ -f "$T/data/status/.selfcheck-testhost" ] && bad '  工作區沒留自檢檔' '留了' || ok '  工作區沒留自檢檔'
+
+MODE=ok J init --data-remote "$T/origin.git" > /dev/null 2>&1
+a_rc '完整 init 重跑冪等' $? 0
+
+# deploy key（假 HOME 裡）
+[ -f "$T/home/.ssh/journal_testhost" ] && ok 'deploy key 已產生' || bad 'deploy key 已產生' '缺'
+a_grep 'ssh alias 已寫入' "$T/home/.ssh/config" 'Host journal.github.com'
+_alias_n=$(grep -cF 'Host journal.github.com' "$T/home/.ssh/config")
+a_eq 'ssh alias 不重複' "$_alias_n" '1'
+
+# 角色：已有 aggregator 就拒絕，--force-takeover 放行
+cat > "$T/data/hosts/otherhost.yml" <<'EOF'
+host: otherhost
+roles: [node, aggregator]
+agent_health: ok
+last_seen: 2026-07-15T00:00:00+08:00
+EOF
+MODE=ok J init --data-remote "$T/origin.git" --role aggregator > "$T/agg.log" 2>&1
+a_nz 'aggregator 已存在 → 拒絕' $?
+a_grep '  拒絕訊息點名對方' "$T/agg.log" '已有 aggregator：otherhost'
+MODE=ok J init --data-remote "$T/origin.git" --role aggregator --force-takeover > /dev/null 2>&1
+a_rc '--force-takeover 放行' $? 0
+a_grep '  角色寫進 hosts' "$T/data/hosts/testhost.yml" 'roles: [node, aggregator]'
+
+# hosts 指令
+MODE=ok J hosts > "$T/hosts.out" 2>&1
+a_grep 'hosts 列出本機' "$T/hosts.out" 'testhost'
+a_grep 'hosts 列出他機' "$T/hosts.out" 'otherhost'
+
+# revoke（從「這台」revoke 他機）
+MODE=ok J revoke otherhost > /dev/null 2>&1
+a_rc 'revoke 成功' $? 0
+a_grep '  retired 標記落地' "$T/data/hosts/otherhost.yml" 'retired: '
+MODE=ok J revoke testhost > /dev/null 2>&1
+a_nz 'revoke 自己被擋' $?
+
+# _onfail：unit 掛掉 → hosts 留 fail 標記；下一次 rollup 蓋回真實健康度
+MODE=ok J _onfail rollup > /dev/null 2>&1
+a_grep 'OnFailure 標記 fail' "$T/data/hosts/testhost.yml" 'agent_health: fail'
+a_grep '  原因帶時間' "$T/data/hosts/testhost.yml" 'OnFailure 觸發'
+MODE=ok J rollup 2026-07-15 > /dev/null 2>&1
+a_grep '成功的 rollup 蓋回健康度' "$T/data/hosts/testhost.yml" 'agent_health: ok'
+
+# doctor --yes：拔掉 hook 後自動補回
+python3 - "$T/claude/settings.json" <<'PY2'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d.get('hooks', {}).pop('SessionEnd', None)
+json.dump(d, open(p, 'w'))
+PY2
+grep -qF 'session-end.sh' "$T/claude/settings.json" && bad 'doctor 前置：hook 已拔' '沒拔掉' || ok 'doctor 前置：hook 已拔'
+MODE=ok J doctor --yes > /dev/null 2>&1
+a_grep 'doctor --yes 自動補回 hook' "$T/claude/settings.json" 'hooks/session-end.sh'
+
+# uninstall：拆 hook 保資料
+MODE=ok J uninstall > /dev/null 2>&1
+grep -qF 'session-end.sh' "$T/claude/settings.json" && bad 'uninstall 移除 hook' '還在' || ok 'uninstall 移除 hook'
+[ -f "$T/data/daily/2026-07-15__testhost.md" ] && ok '  資料保留' || bad '  資料保留' 'daily 不見了'
+[ -f "$T/cfg/host.yml" ] && ok '  本機身分保留' || bad '  本機身分保留' '被刪了'
+
 # ================================================================ 結果
 
 printf '\n════════════════════════════════\n'

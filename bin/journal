@@ -29,7 +29,7 @@ _bootstrap() {
 }
 _bootstrap
 
-for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli init doctor; do
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli provision init doctor; do
 	# shellcheck source=/dev/null
 	. "$JR_ROOT/lib/$_lib.sh"
 done
@@ -47,10 +47,16 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
 
 用法：journal <指令> [選項]
 
-已實作（P1 · log 層）
-  init --local [--host-id ID] [--data-dir DIR]
-                          單機納管：建資料 repo 骨架、寫本機身分、接上 CLI
-  doctor [--check]        環境自檢。--check 只報告不等輸入（timer / hook 走這條）
+已實作
+  init [--local] [--host-id ID] [--data-dir DIR] [--data-remote URL]
+       [--role node|aggregator] [--force-takeover]
+                          納管精靈（皆冪等）：骨架、deploy key、provider、hook、
+                          timer、端到端自檢。--local = 只做離線部分
+  doctor [--check|--yes]  環境自檢。無參數 = 互動逐項補齊；--check 只報告不等輸入
+                          （timer/hook 走這條）；--yes 自動修 journal 自己能做的
+  hosts                   列出已註冊機器、角色、健康度、last_seen
+  uninstall [--purge]     移除 hook 與 timer（--purge 連資料、設定、金鑰一起刪）
+  revoke <host>           從別台跑：標記 retired 並提示撤 deploy key
   rollup [DATE] [--dry-run] [--no-commit]
                           重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
   capture <session>|--hook
@@ -64,8 +70,7 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   version                 版本
 
 尚未實作（見 docs/DESIGN.md §14）
-  aggregate / render      P5 · 中心
-  hosts / revoke / uninstall / digest / trace / progress
+  aggregate / render / digest / trace / progress   P5 · 中心
 
 環境變數
   JOURNAL_REDUCER=awk|python3|node   強制指定減量路徑（驗收用）
@@ -144,9 +149,13 @@ case $_cmd in
 	brief)         jr_cmd_brief "$@" ;;
 	capture)       jr_cmd_capture "$@" ;;
 	check)         jr_cmd_check "$@" ;;
+	hosts)         jr_cmd_hosts "$@" ;;
+	uninstall)     jr_cmd_uninstall "$@" ;;
+	revoke)        jr_cmd_revoke "$@" ;;
+	_onfail)       jr_cmd_onfail "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
 	aggregate|render) jr_not_yet "$_cmd" 'P5 · 中心' ;;
-	hosts|revoke|uninstall|digest|trace|progress) jr_not_yet "$_cmd" 'P4／P5' ;;
+	digest|trace|progress) jr_not_yet "$_cmd" 'P5 · 中心' ;;
 	*)             jr_err "未知指令：$_cmd"; jr_usage >&2; exit 1 ;;
 esac

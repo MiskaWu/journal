@@ -18,24 +18,29 @@ EOF
 }
 
 jr_update_host_yml() {
-	_health=$(jr_agent_health)
-	_reason=$(jr_degraded_reason)
+	# JR_HEALTH_OVERRIDE：OnFailure 路徑用 —— unit 掛了要留 fail 標記，
+	# 下一次成功的 rollup/check 會自然蓋回真實健康度
+	_health=${JR_HEALTH_OVERRIDE:-$(jr_agent_health)}
+	_reason=${JR_HEALTH_REASON:-$(jr_degraded_reason)}
 	_hf="$JR_DATA_DIR/hosts/$JR_HOST.yml"
 	_registered=$(jr_yaml_get "$_hf" registered_at "$(jr_now_iso)")
+	_retired=$(jr_yaml_get "$_hf" retired '')
+	_roles="[${JR_ROLE:-node}]"
+	[ "${JR_ROLE:-node}" = 'aggregator' ] && _roles='[node, aggregator]'
 	mkdir -p "$JR_DATA_DIR/hosts"
 	cat > "$_hf" <<EOF
 host: $JR_HOST
 registered_at: $_registered
 os: $(jr_detect_os)
-roles: [node]
+roles: $_roles
 agent_version: $JR_VERSION
 agent_health: $_health
 degraded_reason: "$_reason"
-reducer: $JR_REDUCER
-hook: not-installed
-timer: not-installed
+reducer: ${JR_REDUCER:-}
 last_seen: $(jr_now_iso)
 EOF
+	[ -n "$_retired" ] && printf 'retired: %s\n' "$_retired" >> "$_hf"
+	return 0
 }
 
 jr_detect_os() {
