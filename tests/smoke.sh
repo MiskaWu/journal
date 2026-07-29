@@ -36,6 +36,7 @@ J() {
 		CLAUDE_CONFIG_DIR="$T/claude" \
 		CLAUDE_SHIM_LOG="$T/shim.log" \
 		CLAUDE_SHIM_MODE="${MODE:-ok}" \
+		CLAUDE_SHIM_ARGLOG="${ARGLOG:-}" \
 		JOURNAL_REDUCER="${RED:-}" \
 		JR_CLAUDE_TIMEOUT="${TOUT:-60}" \
 		JR_MAXTEXT="${MAXT:-1200}" \
@@ -52,6 +53,7 @@ JH() {
 		CLAUDE_CONFIG_DIR="$T/claude" \
 		CLAUDE_SHIM_LOG="$T/shim.log" \
 		CLAUDE_SHIM_MODE="${MODE:-ok}" \
+		CLAUDE_SHIM_ARGLOG="${ARGLOG:-}" \
 		JOURNAL_REDUCER="${RED:-}" \
 		JR_CLAUDE_TIMEOUT=60 \
 		JOURNAL_TODAY="${TODAY:-}" \
@@ -81,6 +83,7 @@ cat > "$T/bin/claude" <<'SHIM'
 #!/bin/sh
 for a in "$@"; do case $a in --version) echo '9.9.9 (shim)'; exit 0 ;; esac; done
 printf '1\n' >> "${CLAUDE_SHIM_LOG:-/dev/null}"
+[ -n "${CLAUDE_SHIM_ARGLOG:-}" ] && printf '%s\n' "$@" >> "$CLAUDE_SHIM_ARGLOG"
 case "${CLAUDE_SHIM_MODE:-ok}" in
 	reject)
 		# 模擬舊版 claude 不認得 --safe-mode：帶了就立刻吐 usage error
@@ -206,6 +209,8 @@ git_authors:
   - test@x
 slug_map:
   -home-test-proj-a--claude-worktrees-fix: proj-a
+model_rollup: test-model-heavy
+model_capture: test-model-light
 secrets_file: $T/secrets.yml
 redact_patterns:
   - MYCORP_[0-9]{6}
@@ -419,6 +424,32 @@ printf '{"session":"leftover-0001","transcript":"/nope","cwd":"","branch":"","en
 MODE=ok RED=awk J rollup 2026-07-15 > /dev/null 2>&1
 a_ngrep 'rollup 覆寫清掉 L1 碎片' "$DAILY15" '#### [L1 '
 a_eq  'rollup 後 spool 全標 captured' "$(grep -cF '"captured":false' "$SPOOL" || true)" '0'
+
+# 模型旋鈕：rollup 用 model_rollup、capture 用 model_capture、環境變數蓋過一切
+rm -f "$T/args.rollup"
+ARGLOG="$T/args.rollup" MODE=ok RED=awk J rollup 2026-07-15 > /dev/null 2>&1
+if grep -A1 -xF -- '--model' "$T/args.rollup" | grep -qxF 'test-model-heavy'; then
+	ok 'rollup 帶 config 的 model_rollup'
+else
+	bad 'rollup 帶 config 的 model_rollup' "$(grep -c . "$T/args.rollup") 個引數中找不到"
+fi
+rm -f "$T/args.capture" "$SPOOL"
+ARGLOG="$T/args.capture" TODAY=2026-07-15 MODE=ok CAPMIN=10 JH < "$T/payload.a" > /dev/null 2>&1
+if grep -A1 -xF -- '--model' "$T/args.capture" | grep -qxF 'test-model-light'; then
+	ok 'capture 帶 config 的 model_capture'
+else
+	bad 'capture 帶 config 的 model_capture' '引數裡找不到'
+fi
+rm -f "$T/args.env"
+ARGLOG="$T/args.env" MODE=ok RED=awk env JOURNAL_MODEL=override-model \
+	HOME="$T/home" JR_CONFIG_HOME="$T/cfg" CLAUDE_CONFIG_DIR="$T/claude" \
+	CLAUDE_SHIM_MODE=ok CLAUDE_SHIM_ARGLOG="$T/args.env" JOURNAL_NO_TIMER=1 \
+	PATH="$T/bin:$PATH" "$BIN" rollup 2026-07-15 > /dev/null 2>&1
+if grep -A1 -xF -- '--model' "$T/args.env" | grep -qxF 'override-model'; then
+	ok 'JOURNAL_MODEL 環境變數蓋過 config'
+else
+	bad 'JOURNAL_MODEL 環境變數蓋過 config' '引數裡找不到'
+fi
 
 # ================================================================ 結果
 
