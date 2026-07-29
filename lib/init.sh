@@ -189,11 +189,21 @@ jr_install_timer() {
 	cat > "$_unitdir/journal-rollup.service" <<EOF
 [Unit]
 Description=journal L2 nightly rollup
+OnFailure=journal-onfail.service
 
 [Service]
 Type=oneshot
 ExecStart=$HOME/.local/bin/journal rollup
 ExecStart=-$HOME/.local/bin/journal check
+EOF
+	# 「壞掉了但你不知道」是最糟的失效模式（§10）—— unit 掛了要留 fail 標記
+	cat > "$_unitdir/journal-onfail.service" <<EOF
+[Unit]
+Description=journal failure marker
+
+[Service]
+Type=oneshot
+ExecStart=$HOME/.local/bin/journal _onfail rollup
 EOF
 	cat > "$_unitdir/journal-rollup.timer" <<EOF
 [Unit]
@@ -217,24 +227,28 @@ jr_cmd_init() {
 	_local=0
 	_host_id=''
 	_data_dir=''
+	_remote=''
+	_role='node'
+	_force=0
 	while [ $# -gt 0 ]; do
 		case $1 in
-			--local)     _local=1 ;;
-			--host-id)   shift; _host_id=${1:-} ;;
-			--data-dir)  shift; _data_dir=${1:-} ;;
-			-*)          jr_die "init: 未知選項 $1" ;;
+			--local)          _local=1 ;;
+			--host-id)        shift; _host_id=${1:-} ;;
+			--data-dir)       shift; _data_dir=${1:-} ;;
+			--data-remote)    shift; _remote=${1:-} ;;
+			--role)           shift; _role=${1:-node} ;;
+			--force-takeover) _force=1 ;;
+			-*)               jr_die "init: 未知選項 $1" ;;
 		esac
 		shift
 	done
-
-	if [ "$_local" -ne 1 ]; then
-		jr_err '目前只實作 `journal init --local`（P1）。'
-		jr_info '完整的十一步納管精靈（provider 授權、deploy key、timer、hook、端到端自檢）是 P4。'
-		return 2
-	fi
+	case $_role in
+		node|aggregator) ;;
+		*) jr_die "role 只能是 node 或 aggregator，收到：$_role" ;;
+	esac
 
 	jr_info ''
-	jr_info "journal init --local  (v$JR_VERSION)"
+	jr_info "journal init$([ "$_local" -eq 1 ] && printf ' --local')  (v$JR_VERSION)"
 	jr_info ''
 
 	# 1) 環境自檢
@@ -262,45 +276,68 @@ jr_cmd_init() {
 	# 寫在 heredoc 裡讀的會是剛被截斷的空檔，重跑一次 created_at 就重置一次
 	mkdir -p "$JR_CONFIG_HOME"
 	_created=$(jr_yaml_get "$JR_HOST_YML" created_at "$(jr_now_iso)")
+	[ "$_role" = 'node' ] && _role=$(jr_yaml_get "$JR_HOST_YML" role node)
 	jr_backup "$JR_HOST_YML"
 	cat > "$JR_HOST_YML" <<EOF
 # journal 本機身分 —— 不入庫
 host: $_host_id
 code_dir: $JR_ROOT
 data_dir: $_data_dir
+role: $_role
 created_at: $_created
 EOF
-	jr_ok "本機身分：$JR_HOST_YML（host=$_host_id）"
+	jr_ok "本機身分：$JR_HOST_YML（host=$_host_id, role=$_role）"
 
 	# 5) CLI symlink
 	jr_link_bin
 
-	# 6) 註冊本機
+	# 6) 環境掛載
 	JR_HOST=$_host_id
 	JR_DATA_DIR=$_data_dir
 	JR_CONFIG_YML="$_data_dir/config.yml"
 	JR_SPOOL="$_data_dir/.spool"
 	JR_REDUCER=$_reducer
+	JR_ROLE=$_role
 	mkdir -p "$JR_SPOOL"
+
+	if [ "$_local" -ne 1 ]; then
+		# 7) per-host deploy key + ssh alias（DESIGN §8 步驟 4）
+		if jr_gen_deploy_key; then
+			jr_ssh_alias
+		fi
+
+		# 8) provider + remote（步驟 5–6）。gh 已登入全自動；否則印手動指引
+		if [ -z "$_remote" ] && ! git -C "$_data_dir" remote get-url origin > /dev/null 2>&1; then
+			_remote=$(jr_provider_connect)
+		fi
+		[ -n "$_remote" ] && jr_wire_remote "$_remote"
+	fi
+
+	# 9) 角色（步驟 8）：同時只能有一台 aggregator
+	jr_role_assign "$_role" "$_force" || return 1
+
+	# 10) 註冊本機（步驟 7 + 10：含降級狀態）
 	jr_update_host_yml
 	jr_ok "註冊 $_data_dir/hosts/$_host_id.yml"
-
 	git -C "$_data_dir" add -A -- hosts config.yml 2>/dev/null
 	git -C "$_data_dir" diff --cached --quiet 2>/dev/null || \
 		git -C "$_data_dir" -c user.name="journal" -c user.email="journal@$_host_id" \
 			commit -q -m "journal: 註冊主機 $_host_id"
 
-	# 7) L1：SessionEnd hook（P2）
+	# 11) agent：SessionEnd hook + 夜間 timer（步驟 9）
 	jr_install_hook || true
-
-	# 8) L2：夜間 timer（P2）
 	jr_install_timer || true
+
+	# 12) 端到端自檢（步驟 11）—— 有 remote 才跑得了
+	if [ "$_local" -ne 1 ]; then
+		jr_selfcheck || return 1
+	fi
 
 	jr_info ''
 	jr_info '完成。之後 session 一關就會自動記錄（L1），每晚自動整併（L2）。'
 	jr_info '手動指令：'
 	jr_info '  journal standup             # 早會要唸的'
 	jr_info '  journal rollup [DATE]       # 手動整併／補跑'
-	jr_info '  journal doctor --check      # 自檢'
+	jr_info '  journal doctor              # 自檢（互動補齊）'
 	return 0
 }
