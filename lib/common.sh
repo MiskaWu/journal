@@ -119,7 +119,9 @@ jr_yaml_section() {
 			if ($0 !~ /^[ \t]/) { inside = 0; next }
 			line = $0
 			sub(/^[ \t]+/, "", line)
-			if (index(line, "-") == 1) { inside = 0; next }
+			# 「- 」開頭是清單項；「-home-…:」開頭是 key —— slug 全都以 - 起頭，
+			# 用 index()==1 判斷會把整個 slug_map 區段誤判成清單而吃不到
+			if (line ~ /^-([ \t]|$)/) { inside = 0; next }
 			pos = index(line, ":")
 			if (pos == 0) next
 			sub_k = substr(line, 1, pos - 1)
@@ -206,7 +208,8 @@ jr_agent_health() {
 
 jr_degraded_reason() {
 	[ "$(jr_agent_health)" = 'degraded' ] || { printf ''; return; }
-	printf '無 node / python3，減量走 awk 粗篩（token 約增 3–5 倍）'
+	# 實測 awk 素材反而比 node 小（少了工具參數提示）——代價是蒸餾忠實度，不是 token
+	printf '無 node / python3，減量走 awk 粗篩（無工具參數提示，蒸餾忠實度較低）'
 }
 
 # ---------------------------------------------------------------- 鎖

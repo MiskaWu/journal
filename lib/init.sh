@@ -146,14 +146,17 @@ jr_cmd_init() {
 	jr_ok "資料 repo：$_data_dir"
 
 	# 4) 本機身分
+	# created_at 必須先讀出來 —— redirection 比 heredoc 展開先發生，
+	# 寫在 heredoc 裡讀的會是剛被截斷的空檔，重跑一次 created_at 就重置一次
 	mkdir -p "$JR_CONFIG_HOME"
+	_created=$(jr_yaml_get "$JR_HOST_YML" created_at "$(jr_now_iso)")
 	jr_backup "$JR_HOST_YML"
 	cat > "$JR_HOST_YML" <<EOF
 # journal 本機身分 —— 不入庫
 host: $_host_id
 code_dir: $JR_ROOT
 data_dir: $_data_dir
-created_at: $(jr_yaml_get "$JR_HOST_YML" created_at "$(jr_now_iso)")
+created_at: $_created
 EOF
 	jr_ok "本機身分：$JR_HOST_YML（host=$_host_id）"
 
