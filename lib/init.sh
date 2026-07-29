@@ -40,15 +40,26 @@ EOF
 
 	if [ ! -f "$_dir/GOALS.md" ]; then
 		cat > "$_dir/GOALS.md" <<'EOF'
-# 目標
+# 目標（SLO）
 
 > SLI 必須是「一條會回 0/非0 的指令」或「一個便宜可觀察的事實」，不是形容詞。
-> 種子播種與 `journal check` 是 P3 的事，這裡先留骨架。
+> `journal check` 讀這個檔，逐項檢查後寫 status/<host>.yml。
+>
+> 區塊文法（<!-- --> 內整段忽略）：
+>
+>     - id: 短代號
+>       title: 一句話
+>       sli: { kind: probe|file|checklist|threshold|judge|manual, cmd: "指令", source: 路徑, target: 數字 }
+>       done-when: 完成的判準（給人讀）
+>       requires: { paths: ["/只有某些機器看得到的路徑"], reach: ["https://端點"] }
+>
+> 規則：能寫 probe/file/checklist 就別退到 threshold；無 probe 才用 judge；
+> 需要密碼的標 manual；**probe 一律 read-only**；requires 不滿足 → na 不是 fail。
 
 <!--
 - id: example-goal
-  title: 範例目標
-  sli: { kind: checklist, source: /path/to/runbook.md }
+  title: 範例：某服務起來
+  sli: { kind: probe, cmd: "curl -fsS https://example.com" }
   done-when: 端到端驗證通過
   requires: { paths: ["/opt/infra"] }
 -->
@@ -182,6 +193,7 @@ Description=journal L2 nightly rollup
 [Service]
 Type=oneshot
 ExecStart=$HOME/.local/bin/journal rollup
+ExecStart=-$HOME/.local/bin/journal check
 EOF
 	cat > "$_unitdir/journal-rollup.timer" <<EOF
 [Unit]

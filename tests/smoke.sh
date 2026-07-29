@@ -93,7 +93,12 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		cat > /dev/null
 		printf 'goals_touched: bare\n\n## 完成\n- bare 模式完成\n## 拍板\n## 待續\n## 卡住\n' ;;
 	ok)
-		# capture 的 prompt 含「減量紀錄」—— 回單 session 的碎片格式
+		for a in "$@"; do case $a in *"SLI 裁決"*)
+			cat > /dev/null
+			printf 'PARTIAL: 大致就位但未收尾\n'
+			exit 0 ;;
+		esac; done
+		# capture 的 prompt 含「剛結束」—— 回單 session 的碎片格式
 		for a in "$@"; do case $a in *剛結束*)
 			cat > /dev/null
 			printf -- '- 修好了 utf8_trim 的截斷\n- 拍板：截斷走 byte 邊界\n'
@@ -450,6 +455,71 @@ if grep -A1 -xF -- '--model' "$T/args.env" | grep -qxF 'override-model'; then
 else
 	bad 'JOURNAL_MODEL 環境變數蓋過 config' '引數裡找不到'
 fi
+
+# ================================================================ 8 · SLI check
+
+printf '\n== 8 · SLI check ==\n'
+STATUS="$T/data/status/testhost.yml"
+
+printf -- '- [x] 一\n- [x] 二\n- [ ] 三\n' > "$T/checklist.md"
+printf '目標 X 的證據：大部分完成，文件缺最後一節。\n' > "$T/evidence.md"
+
+cat > "$T/data/GOALS.md" <<EOF
+# 測試目標
+
+- id: g-pass
+  title: probe 會過
+  sli: { kind: probe, cmd: "true" }
+- id: g-fail
+  title: probe 會掛
+  sli: { kind: probe, cmd: "exit 3" }
+- id: g-file
+  title: file 型
+  sli: { kind: file, cmd: "grep -q hello $T/repo-a/a.txt" }
+- id: g-list
+  title: checklist 2/3
+  sli: { kind: checklist, source: $T/checklist.md }
+- id: g-th-pass
+  title: threshold 過
+  sli: { kind: threshold, cmd: "echo 7", target: 5 }
+- id: g-th-part
+  title: threshold 未達
+  sli: { kind: threshold, cmd: "echo 3", target: 9 }
+- id: g-judge
+  title: judge 軟評
+  sli: { kind: judge, source: $T/evidence.md }
+- id: g-manual
+  title: 要密碼的
+  sli: { kind: manual }
+  done-when: 人工登入後驗證
+- id: g-na
+  title: 只有 infra 機看得到
+  sli: { kind: probe, cmd: "true" }
+  requires: { paths: ["/nonexistent/infra"] }
+
+<!--
+- id: g-commented
+  title: 註解掉的不該跑
+  sli: { kind: probe, cmd: "true" }
+-->
+EOF
+git -C "$T/data" add GOALS.md
+git -C "$T/data" -c user.name=T -c user.email=test@x commit -q -m 'test: goals'
+
+MODE=ok J check > "$T/check.log" 2>&1
+a_nz 'check 有 fail 時 exit 非零' $?
+a_grep 'probe pass' "$STATUS" 'g-pass: { state: pass'
+a_grep 'probe fail + exit code' "$STATUS" 'g-fail: { state: fail, kind: probe, detail: "exit 3'
+a_grep 'file 型 pass' "$STATUS" 'g-file: { state: pass'
+a_grep 'checklist partial 2/3' "$STATUS" 'g-list: { state: partial, kind: checklist, detail: "2/3" }'
+a_grep 'threshold pass 7/5' "$STATUS" 'g-th-pass: { state: pass, kind: threshold, detail: "7/5" }'
+a_grep 'threshold partial 3/9' "$STATUS" 'g-th-part: { state: partial, kind: threshold, detail: "3/9" }'
+a_grep 'judge 軟評帶 ~ 前綴' "$STATUS" 'g-judge: { state: partial, kind: judge, detail: "~'
+a_grep 'manual 不自動跑' "$STATUS" 'g-manual: { state: manual'
+a_grep 'requires 不滿足 → na 不是 fail' "$STATUS" 'g-na: { state: na, kind: probe, detail: "此機看不到 /nonexistent/infra"'
+a_ngrep '<!-- --> 區塊不執行' "$STATUS" 'g-commented'
+a_grep 'agent_health 一併寫入' "$STATUS" 'agent_health: ok'
+a_eq  'check 結果已 commit' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
 
 # ================================================================ 結果
 
