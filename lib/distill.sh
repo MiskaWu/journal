@@ -59,6 +59,39 @@ jr_flag_rejected() {
 	grep -qi -e 'unknown option' -e 'unknown argument' -e "error: option" -e 'Usage:' "$1"
 }
 
+# jr_claude_run SYSFILE PROMPT INFILE OUTFILE ERRFILE TIMEOUT
+# 完整旗標先上，被拒才退 bare —— L2 的日蒸餾與 L1 的 capture 共用這一條。
+# 成功且有輸出回 0；其餘一律回 1 且 OUTFILE 清空。
+jr_claude_run() {
+	_rsys=$1; _rpr=$2; _rin=$3; _rout=$4; _rerr=$5; _rto=$6
+	# 遞迴保護：bare 模式不帶 --safe-mode，hooks 不會被跳過 ——
+	# SessionEnd hook 看到這個變數就直接退出，蒸餾不會再觸發 capture
+	export JOURNAL_IN_CAPTURE=1
+
+	if jr_claude_try full "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr"; then
+		[ -s "$_rout" ] && return 0
+		jr_err 'claude 回了空字串'
+		: > "$_rout"
+		return 1
+	fi
+	_rc=$?
+
+	if [ "$_rc" -eq 124 ]; then
+		jr_err "claude 逾時（${_rto}s）"
+	elif jr_flag_rejected "$_rerr"; then
+		jr_warn "這個 claude 版本不吃某個旗標，退到最小旗標重試（$(sed -n 1p "$_rerr")）"
+		if jr_claude_try bare "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr"; then
+			[ -s "$_rout" ] && { jr_warn '已用最小旗標完成 —— 注意：這次會留下自己的 transcript'; return 0; }
+		fi
+		jr_err '最小旗標也失敗'
+	else
+		jr_err "claude 失敗（exit $_rc）"
+	fi
+	[ -s "$_rerr" ] && sed -n '1,10p' "$_rerr" >&2
+	: > "$_rout"
+	return 1
+}
+
 jr_system_prompt() {
 	cat <<'EOF'
 你是一位替使用者整理「今天做了什麼」的紀錄者。輸入是當日 Claude Code session
@@ -161,29 +194,7 @@ jr_distill() {
 	_err="$JR_TMPDIR/claude.err"
 	_timeout=$(jr_claude_timeout)
 	jr_debug "蒸餾：逾時 ${_timeout}s、素材 $(wc -c < "$_input" | tr -d ' ') bytes"
-
-	if jr_claude_try full "$_timeout" "$_sys" "$_prompt" "$_input" "$_out" "$_err"; then
-		[ -s "$_out" ] && return 0
-		jr_err 'claude 回了空字串'
-		: > "$_out"
-		return 1
-	fi
-	_rc=$?
-
-	if [ "$_rc" -eq 124 ]; then
-		jr_err "claude 逾時（${_timeout}s）"
-	elif jr_flag_rejected "$_err"; then
-		jr_warn "這個 claude 版本不吃某個旗標，退到最小旗標重試（$(sed -n 1p "$_err")）"
-		if jr_claude_try bare "$_timeout" "$_sys" "$_prompt" "$_input" "$_out" "$_err"; then
-			[ -s "$_out" ] && { jr_warn '已用最小旗標完成 —— 注意：蒸餾這次會留下自己的 transcript'; return 0; }
-		fi
-		jr_err '最小旗標也失敗'
-	else
-		jr_err "claude 失敗（exit $_rc）"
-	fi
-	[ -s "$_err" ] && sed -n '1,10p' "$_err" >&2
-	: > "$_out"
-	return 1
+	jr_claude_run "$_sys" "$_prompt" "$_input" "$_out" "$_err" "$_timeout"
 }
 
 # jr_parse_distilled INFILE —— 從模型輸出撈出 goals_touched（印到 stdout）

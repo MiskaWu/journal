@@ -39,8 +39,35 @@ J() {
 		JOURNAL_REDUCER="${RED:-}" \
 		JR_CLAUDE_TIMEOUT="${TOUT:-60}" \
 		JR_MAXTEXT="${MAXT:-1200}" \
+		JOURNAL_TODAY="${TODAY:-}" \
+		JOURNAL_NO_TIMER=1 \
 		PATH="$T/bin:$PATH" \
 		"$BIN" "$@"
+}
+
+# hook 入口：模擬 Claude Code 觸發 SessionEnd（同步模式，結果可斷言）
+JH() {
+	env HOME="$T/home" \
+		JR_CONFIG_HOME="$T/cfg" \
+		CLAUDE_CONFIG_DIR="$T/claude" \
+		CLAUDE_SHIM_LOG="$T/shim.log" \
+		CLAUDE_SHIM_MODE="${MODE:-ok}" \
+		JOURNAL_REDUCER="${RED:-}" \
+		JR_CLAUDE_TIMEOUT=60 \
+		JOURNAL_TODAY="${TODAY:-}" \
+		JOURNAL_NO_TIMER=1 \
+		JOURNAL_CAPTURE_SYNC=1 \
+		JR_CAPTURE_MIN="${CAPMIN:-150}" \
+		JOURNAL_BIN="$BIN" \
+		JOURNAL_IN_CAPTURE="${INCAP:-}" \
+		PATH="$T/bin:$PATH" \
+		sh "$ROOT/hooks/session-end.sh"
+}
+
+mkpayload() {
+	# mkpayload SESSION SLUG CWD
+	printf '{"session_id":"%s","transcript_path":"%s/claude/projects/%s/%s.jsonl","cwd":"%s","hook_event_name":"SessionEnd","reason":"other"}' \
+		"$1" "$T" "$2" "$1" "$3"
 }
 
 DAILY="$T/data/daily/2026-07-15__testhost.md"
@@ -63,6 +90,12 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		cat > /dev/null
 		printf 'goals_touched: bare\n\n## 完成\n- bare 模式完成\n## 拍板\n## 待續\n## 卡住\n' ;;
 	ok)
+		# capture 的 prompt 含「減量紀錄」—— 回單 session 的碎片格式
+		for a in "$@"; do case $a in *剛結束*)
+			cat > /dev/null
+			printf -- '- 修好了 utf8_trim 的截斷\n- 拍板：截斷走 byte 邊界\n'
+			exit 0 ;;
+		esac; done
 		cat > /dev/null
 		printf 'goals_touched: proj-a, proj-b\n\n## 早會\n- 今天把冒煙測試抓到的問題修掉了\n- 授權還卡在外部\n\n## 摘要\n- proj-a | 修復 | proj-a | 冒煙測試抓到的 bug 已修\n- proj-b | 卡住 |  | 等待外部授權\n\n## 完成\n- 修好 utf8_trim（abc1234）\n## 拍板\n- 決定採 X 案\n## 待續\n- 還有 Y\n## 卡住\n' ;;
 	secret)
@@ -161,6 +194,8 @@ MODE=ok J init --local --host-id testhost --data-dir "$T/data" > "$T/init2.log" 
 a_rc 'init 重跑成功（冪等）' $? 0
 c2=$(awk -F': ' '/^created_at:/ { print $2 }' "$T/cfg/host.yml")
 a_eq 'created_at 重跑不重置' "$c2" "$c1"
+a_eq 'SessionEnd hook 註冊且不重複（跑兩次 init 仍一筆）' \
+	"$(grep -cF 'hooks/session-end.sh' "$T/claude/settings.json" 2>/dev/null)" '1'
 
 # 測試專用 config —— 蓋掉 example 的預留內容
 cat > "$T/data/config.yml" <<EOF
@@ -317,6 +352,73 @@ a_eq 'dry-run 不動 HEAD' "$(git -C "$T/data" rev-parse HEAD)" "$head0"
 MODE=ok J rollup 2026-07-02 --no-commit > /dev/null 2>&1
 [ -f "$T/data/daily/2026-07-02__testhost.md" ] && ok '--no-commit 有寫 daily' || bad '--no-commit 有寫 daily' '沒寫'
 a_eq '--no-commit 不動 HEAD' "$(git -C "$T/data" rev-parse HEAD)" "$head0"
+
+# ================================================================ 7 · L1 capture
+
+printf '\n== 7 · L1 capture（SessionEnd hook）==\n'
+SPOOL="$T/data/.spool/2026-07-15__testhost.jsonl"
+DAILY15="$T/data/daily/2026-07-15__testhost.md"
+
+# 先把 daily 恢復成 rollup 定稿（前面失敗路徑測試動過它）
+MODE=ok RED=awk J rollup 2026-07-15 > /dev/null 2>&1
+
+# 正常捕捉：session A
+mkpayload aaaaaaaa-0001 -home-test-proj-a /nonexistent/proj-a > "$T/payload.a"
+TODAY=2026-07-15 MODE=ok JH < "$T/payload.a" > /dev/null 2>&1
+a_rc 'hook → capture 成功' $? 0
+a_grep 'spool 有這個 session 且 captured:true' "$SPOOL" '"session":"aaaaaaaa-0001","transcript"'
+a_grep '  captured 已翻真' "$SPOOL" 'captured":true'
+a_grep 'daily append 了 L1 碎片' "$DAILY15" '#### [L1 '
+a_grep '  碎片內容來自單 session 蒸餾' "$DAILY15" '修好了 utf8_trim 的截斷'
+a_grep '  rollup 定稿仍在（append 不是覆寫）' "$DAILY15" '## 摘要'
+a_eq  '  資料 repo 已 commit' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
+
+# 冪等：同一個 session 再觸發一次
+TODAY=2026-07-15 MODE=ok JH < "$T/payload.a" > /dev/null 2>&1
+a_eq '同 session 重複觸發只留一份碎片' "$(grep -cF 'aaaaaaaa' "$DAILY15")" '1'
+a_eq '  spool 也只一行' "$(grep -cF '"session":"aaaaaaaa-0001"' "$SPOOL")" '1'
+
+# 太小的 session：不呼叫 claude，直接標 captured
+rm -f "$T/shim.log"
+mkpayload dddddddd-0001 -home-test-proj-c /nonexistent/proj-c > "$T/payload.d"
+TODAY=2026-07-15 MODE=ok JH < "$T/payload.d" > /dev/null 2>&1
+a_grep '小 session 標 captured 不蒸餾' "$SPOOL" '"session":"dddddddd-0001"'
+a_eq  '  沒呼叫 claude' "$([ -f "$T/shim.log" ] && wc -l < "$T/shim.log" | tr -d ' ' || echo 0)" '0'
+
+# 鎖被佔：安靜放棄，captured:false 留給 L2
+sleep 60 & LOCKPID=$!
+mkdir -p "$T/data/.spool/lock.rollup"
+printf '%s\n%s\n' "$LOCKPID" "$(date +%s)" > "$T/data/.spool/lock.rollup/owner"
+mkpayload cccccccc-0001 -home-test-proj-a--claude-worktrees-fix /nonexistent/wt-x > "$T/payload.c"
+TODAY=2026-07-15 MODE=ok CAPMIN=10 JH < "$T/payload.c" > /dev/null 2>&1
+a_rc '鎖被佔時 capture 安靜退出' $? 0
+a_grep '  spool 留下 captured:false' "$SPOOL" '"session":"cccccccc-0001"'
+if grep -F '"session":"cccccccc-0001"' "$SPOOL" | grep -qF '"captured":false'; then
+	ok '  確認未被標 captured'
+else
+	bad '  確認未被標 captured' '被標了'
+fi
+kill $LOCKPID 2>/dev/null; rm -rf "$T/data/.spool/lock.rollup"
+
+# 重試：鎖釋放後同 payload 再來 → 這次做完
+TODAY=2026-07-15 MODE=ok CAPMIN=10 JH < "$T/payload.c" > /dev/null 2>&1
+if grep -F '"session":"cccccccc-0001"' "$SPOOL" | grep -qF '"captured":true'; then
+	ok '鎖釋放後重試補完（captured:true）'
+else
+	bad '鎖釋放後重試補完（captured:true）' '仍是 false'
+fi
+a_eq '  重試沒有重複 spool 行' "$(grep -cF '"session":"cccccccc-0001"' "$SPOOL")" '1'
+
+# 遞迴保護：JOURNAL_IN_CAPTURE 設定時 hook 直接退出
+_lines_before=$(wc -l < "$SPOOL" | tr -d ' ')
+TODAY=2026-07-15 MODE=ok INCAP=1 JH < "$T/payload.a" > /dev/null 2>&1
+a_eq '遞迴保護：IN_CAPTURE 時 hook 不做事' "$(wc -l < "$SPOOL" | tr -d ' ')" "$_lines_before"
+
+# L2 收尾：rollup 覆寫掉碎片、spool 全標 captured
+printf '{"session":"leftover-0001","transcript":"/nope","cwd":"","branch":"","ended":"x","captured":false}\n' >> "$SPOOL"
+MODE=ok RED=awk J rollup 2026-07-15 > /dev/null 2>&1
+a_ngrep 'rollup 覆寫清掉 L1 碎片' "$DAILY15" '#### [L1 '
+a_eq  'rollup 後 spool 全標 captured' "$(grep -cF '"captured":false' "$SPOOL" || true)" '0'
 
 # ================================================================ 結果
 

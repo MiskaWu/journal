@@ -23,7 +23,11 @@ jr_tz_offset() {
 	printf '%s' "$_s"
 }
 
-jr_today() { date +%Y-%m-%d; }
+# JOURNAL_TODAY 是測試縫：冒煙測試的 fixture 日期是固定的，capture 的
+# 「今天」必須能被釘住。正常執行時永遠不設。
+jr_today() {
+	if [ -n "${JOURNAL_TODAY:-}" ]; then printf '%s' "$JOURNAL_TODAY"; else date +%Y-%m-%d; fi
+}
 jr_now_iso() { date +%Y-%m-%dT%H:%M:%S%z | sed 's/\(..\)$/:\1/'; }
 jr_now_epoch() {
 	_e=$(date +%s 2>/dev/null)

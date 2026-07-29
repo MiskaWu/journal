@@ -75,9 +75,19 @@ jr_cmd_doctor() {
 		jr_doctor_row bad transcript "$JR_PROJECTS_DIR 不存在"
 		_fatal=$((_fatal + 1))
 	fi
-	jr_doctor_row warn hook 'SessionEnd 未註冊（P2）'
-	jr_doctor_row warn timer 'journal-rollup.timer 未安裝（P4）'
-	_advice=$((_advice + 2))
+	if [ -f "$JR_CLAUDE_HOME/settings.json" ] && grep -qF 'hooks/session-end.sh' "$JR_CLAUDE_HOME/settings.json"; then
+		jr_doctor_row ok hook 'SessionEnd 已註冊'
+	else
+		jr_doctor_row warn hook 'SessionEnd 未註冊 → journal init --local'
+		_advice=$((_advice + 1))
+	fi
+	if jr_has systemctl && systemctl --user is-enabled journal-rollup.timer > /dev/null 2>&1; then
+		_next=$(systemctl --user list-timers journal-rollup.timer 2>/dev/null | awk 'NR==2 { print $1, $2 }')
+		jr_doctor_row ok timer "journal-rollup.timer 已啟用${_next:+（下次 $_next）}"
+	else
+		jr_doctor_row warn timer 'journal-rollup.timer 未啟用 → journal init --local'
+		_advice=$((_advice + 1))
+	fi
 
 	printf '\n  健康度：%s\n' "$(jr_agent_health)"
 	printf '  %d 項必須處理，%d 項建議處理。\n\n' "$_fatal" "$_advice"

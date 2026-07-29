@@ -29,7 +29,7 @@ _bootstrap() {
 }
 _bootstrap
 
-for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup init doctor; do
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture init doctor; do
 	# shellcheck source=/dev/null
 	. "$JR_ROOT/lib/$_lib.sh"
 done
@@ -53,13 +53,15 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   doctor [--check]        環境自檢。--check 只報告不等輸入（timer / hook 走這條）
   rollup [DATE] [--dry-run] [--no-commit]
                           重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
+  capture <session>|--hook
+                          L1 即時層：單 session 蒸餾 → gate → append。由 SessionEnd
+                          hook 背景呼叫，也可手動補跑某個 session
   show [DATE]             印出當日 daily 檔（全文：早會 + 摘要 + 四段細節）
   standup [DATE]          只印早會層（站立會議要唸的短句；行數由 config 的 standup_lines 控制）
   brief [DATE]            只印回報層摘要（專案｜類型｜標籤｜一句話）
   version                 版本
 
 尚未實作（見 docs/DESIGN.md §14）
-  capture <session>       P2 · 即時層（SessionEnd hook）
   check                   P3 · SLI
   aggregate / render      P5 · 中心
   hosts / revoke / uninstall / digest / trace / progress
@@ -139,9 +141,9 @@ case $_cmd in
 	show)          jr_cmd_show "$@" ;;
 	standup)       jr_cmd_standup "$@" ;;
 	brief)         jr_cmd_brief "$@" ;;
+	capture)       jr_cmd_capture "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
-	capture)       jr_not_yet capture 'P2 · 即時層' ;;
 	check)         jr_not_yet check 'P3 · 目標／SLI' ;;
 	aggregate|render) jr_not_yet "$_cmd" 'P5 · 中心' ;;
 	hosts|revoke|uninstall|digest|trace|progress) jr_not_yet "$_cmd" 'P4／P5' ;;
