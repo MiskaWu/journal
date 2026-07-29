@@ -53,7 +53,8 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   doctor [--check]        環境自檢。--check 只報告不等輸入（timer / hook 走這條）
   rollup [DATE] [--dry-run] [--no-commit]
                           重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
-  show [DATE]             印出當日 daily 檔（全文：摘要 + 四段細節）
+  show [DATE]             印出當日 daily 檔（全文：早會 + 摘要 + 四段細節）
+  standup [DATE]          只印早會層（站立會議要唸的短句；行數由 config 的 standup_lines 控制）
   brief [DATE]            只印回報層摘要（專案｜類型｜標籤｜一句話）
   version                 版本
 
@@ -77,6 +78,23 @@ jr_cmd_show() {
 	_f=$(jr_daily_path "$_d")
 	[ -f "$_f" ] || jr_die "沒有 $_f —— 先跑 journal rollup $_d"
 	cat "$_f"
+}
+
+# 早會層：站立會議要唸的那幾句。力度由 config 的 standup_lines 控制。
+jr_cmd_standup() {
+	jr_load_host
+	_d=${1:-$(jr_today)}
+	jr_date_valid "$_d" || jr_die "日期格式要 YYYY-MM-DD，收到：$_d"
+	_f=$(jr_daily_path "$_d")
+	[ -f "$_f" ] || jr_die "沒有 $_f —— 先跑 journal rollup $_d"
+	awk '
+		/^## 早會/ { inside = 1; next }
+		/^## /     { inside = 0 }
+		inside && /^- / { sub(/^- /, ""); print; found = 1 }
+		END { if (!found)
+			print "（這天的 daily 沒有早會段 —— 舊格式；journal rollup " d " 可重生成）"
+		}
+	' d="$_d" "$_f"
 }
 
 # 回報層：只印摘要段，欄位對齊。細節要看全文用 show。
@@ -119,6 +137,7 @@ case $_cmd in
 	doctor)        jr_cmd_doctor "$@" ;;
 	rollup)        jr_cmd_rollup "$@" ;;
 	show)          jr_cmd_show "$@" ;;
+	standup)       jr_cmd_standup "$@" ;;
 	brief)         jr_cmd_brief "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
