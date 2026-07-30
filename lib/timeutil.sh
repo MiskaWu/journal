@@ -87,6 +87,75 @@ jr_day_window() {
 		}'
 }
 
+# jr_days_between DATE1 DATE2 → 印出 DATE2 - DATE1 的天數
+jr_days_between() {
+	awk -v a="$1" -v b="$2" '
+		function days_from_civil(y, m, dd,    yy, era, yoe, doy, doe) {
+			yy = (m <= 2) ? y - 1 : y
+			era = int((yy >= 0 ? yy : yy - 399) / 400)
+			yoe = yy - era * 400
+			doy = int((153 * (m + ((m > 2) ? -3 : 9)) + 2) / 5) + dd - 1
+			doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+			return era * 146097 + doe - 719468
+		}
+		function d2n(s) { return days_from_civil(substr(s,1,4)+0, substr(s,6,2)+0, substr(s,9,2)+0) }
+		BEGIN { print d2n(b) - d2n(a) }'
+}
+
+# jr_iso_week DATE → 2026-W31（ISO 8601：週一起算，該週的週四決定年份）
+jr_iso_week() {
+	awk -v d="$1" '
+		function days_from_civil(y, m, dd,    yy, era, yoe, doy, doe) {
+			yy = (m <= 2) ? y - 1 : y
+			era = int((yy >= 0 ? yy : yy - 399) / 400)
+			yoe = yy - era * 400
+			doy = int((153 * (m + ((m > 2) ? -3 : 9)) + 2) / 5) + dd - 1
+			doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+			return era * 146097 + doe - 719468
+		}
+		function civil_year(z,    era, doe, yoe, y, doy) {
+			z += 719468
+			era = int((z >= 0 ? z : z - 146096) / 146097)
+			doe = z - era * 146097
+			yoe = int((doe - int(doe / 1460) + int(doe / 36524) - int(doe / 146096)) / 365)
+			y = yoe + era * 400
+			doy = doe - (365 * yoe + int(yoe / 4) - int(yoe / 100))
+			if (int((5 * doy + 2) / 153) + ((int((5 * doy + 2) / 153) < 10) ? 3 : -9) <= 2) y += 1
+			return y
+		}
+		BEGIN {
+			days = days_from_civil(substr(d,1,4)+0, substr(d,6,2)+0, substr(d,9,2)+0)
+			dow = ((days % 7) + 7 + 3) % 7 + 1          # Mon=1..Sun=7（epoch 日 0 = 週四）
+			thu = days + (4 - dow)
+			y = civil_year(thu)
+			week = int((thu - days_from_civil(y, 1, 1)) / 7) + 1
+			printf "%04d-W%02d\n", y, week
+		}'
+}
+
+# jr_week_dates DATE → 該 ISO 週的七個日期（週一到週日，一行一個）
+jr_week_dates() {
+	_dow=$(awk -v d="$1" '
+		function days_from_civil(y, m, dd,    yy, era, yoe, doy, doe) {
+			yy = (m <= 2) ? y - 1 : y
+			era = int((yy >= 0 ? yy : yy - 399) / 400)
+			yoe = yy - era * 400
+			doy = int((153 * (m + ((m > 2) ? -3 : 9)) + 2) / 5) + dd - 1
+			doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+			return era * 146097 + doe - 719468
+		}
+		BEGIN {
+			days = days_from_civil(substr(d,1,4)+0, substr(d,6,2)+0, substr(d,9,2)+0)
+			print ((days % 7) + 7 + 3) % 7 + 1
+		}')
+	_mon=$(jr_date_shift "$1" "$((1 - _dow))")
+	_i=0
+	while [ $_i -lt 7 ]; do
+		jr_date_shift "$_mon" "$_i"
+		_i=$((_i + 1))
+	done
+}
+
 # jr_date_shift DATE DAYS → 印出位移後的日期
 jr_date_shift() {
 	awk -v d="$1" -v n="$2" '
