@@ -93,6 +93,11 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		cat > /dev/null
 		printf 'goals_touched: bare\n\n## 完成\n- bare 模式完成\n## 拍板\n## 待續\n## 卡住\n' ;;
 	ok)
+		for a in "$@"; do case $a in *週報*)
+			cat > /dev/null
+			printf '## 本週主線\n- proj-a：從壞到好\n## 拍板\n- 決定 W\n## 未解\n- 還卡著 Z\n'
+			exit 0 ;;
+		esac; done
 		for a in "$@"; do case $a in *"SLI 裁決"*)
 			cat > /dev/null
 			printf 'PARTIAL: 大致就位但未收尾\n'
@@ -530,8 +535,8 @@ git init -q --bare "$T/origin.git"
 MODE=ok J init --data-remote "$T/origin.git" > "$T/init-full.log" 2>&1
 a_rc '完整 init（含端到端自檢）成功' $? 0
 a_grep '  自檢真的跑了' "$T/init-full.log" '端到端自檢通過'
-a_eq  '  遠端與本地同步' "$(git -C "$T/data" rev-parse HEAD)" "$(git --git-dir "$T/origin.git" rev-parse HEAD 2>/dev/null || git -C "$T/origin.git" rev-parse HEAD)"
-if git --git-dir "$T/origin.git" log --format=%s | grep -qF 'selfcheck 還原'; then
+a_eq  '  遠端與本地同步' "$(git -C "$T/data" rev-parse HEAD)" "$(git --git-dir "$T/origin.git" rev-parse refs/heads/main 2>/dev/null)"
+if git --git-dir "$T/origin.git" log refs/heads/main --format=%s | grep -qF 'selfcheck 還原'; then
 	ok '  自檢檔已還原（遠端也乾淨）'
 else
 	bad '  自檢檔已還原（遠端也乾淨）' '沒看到還原 commit'
@@ -597,6 +602,112 @@ MODE=ok J uninstall > /dev/null 2>&1
 grep -qF 'session-end.sh' "$T/claude/settings.json" && bad 'uninstall 移除 hook' '還在' || ok 'uninstall 移除 hook'
 [ -f "$T/data/daily/2026-07-15__testhost.md" ] && ok '  資料保留' || bad '  資料保留' 'daily 不見了'
 [ -f "$T/cfg/host.yml" ] && ok '  本機身分保留' || bad '  本機身分保留' '被刪了'
+
+# ================================================================ 10 · 中心（P5）
+
+printf '\n== 10 · 中心 ==\n'
+
+# 佈景：第二台機器 hostb（infra 角色的模擬）——
+#   entra 目標：hosta（本機 testhost）的 na 比 hostb 的 partial「新」，
+#   優勝者仍必須是 hostb 的 partial —— na 永遠選不上
+cat > "$T/data/status/hostb.yml" <<'EOF'
+host: hostb
+checked_at: 2026-07-13T22:10:00+08:00
+agent_health: degraded
+degraded_reason: "無 node / python3"
+results:
+  entra: { state: partial, kind: checklist, detail: "4/6" }
+  all-na-goal: { state: na, kind: probe, detail: "hostb 也看不到" }
+EOF
+cat > "$T/data/status/testhost.yml.extra" <<'EOF'
+EOF
+rm -f "$T/data/status/testhost.yml.extra"
+# 本機 status 補 entra 的 na（較新）與 all-na-goal 的 na
+cat >> "$T/data/status/testhost.yml" <<'EOF'
+  entra: { state: na, kind: checklist, detail: "此機看不到 /opt/infra" }
+  all-na-goal: { state: na, kind: probe, detail: "此機也看不到" }
+EOF
+cat > "$T/data/hosts/hostb.yml" <<'EOF'
+host: hostb
+registered_at: 2026-07-01T00:00:00+08:00
+os: linux
+roles: [node]
+agent_version: 0.1.0
+agent_health: degraded
+degraded_reason: "無 node / python3，減量走 awk 粗篩"
+reducer: awk
+last_seen: 2026-07-10T23:00:00+08:00
+EOF
+# hostb 的 daily（供 trace 跨機）
+cat > "$T/data/daily/2026-07-14__hostb.md" <<'EOF'
+---
+date: 2026-07-14
+host: hostb
+metrics: { sessions: 1, commits: 1, files_touched: 1 }
+goals_touched: [proj-a]
+generated_by: rollup
+reduced_by: awk
+redactions: 0
+status: ok
+---
+## 早會
+- hostb 這天把 proj-a 的環境弄好了
+## 摘要
+- proj-a | 進度 | proj-a | hostb 上環境就緒
+## 完成
+- 環境設定
+## 拍板
+## 待續
+## 卡住
+EOF
+git -C "$T/data" add -A
+git -C "$T/data" -c user.name=T -c user.email=test@x commit -q -m 'test: 第二台機器的資料'
+
+# aggregate（testhost 在 phase 9 已是 aggregator）
+TODAY=2026-07-15 MODE=ok J aggregate > "$T/agg2.log" 2>&1
+a_rc 'aggregate 成功' $? 0
+PROG="$T/data/progress.md"
+a_grep '優勝者是最新的非 na（partial 4/6，即使 na 比較新）' "$PROG" '4/6'
+a_grep '  由 hostb 量測' "$PROG" 'hostb'
+a_grep '全 na 的目標標 unchecked 不是 fail' "$PROG" 'unchecked'
+a_ngrep '  沒有把全 na 誤報成 fail' "$PROG" 'all-na-goal**（fail'
+a_grep 'host staleness：hostb 沉默 5 天（>3）' "$PROG" '沉默 5 天'
+a_grep 'agent unhealthy：hostb 降級被標出' "$PROG" 'hostb 降級運行'
+a_ngrep 'retired 的 otherhost 不進沉默 alert' "$PROG" 'otherhost 沉默'
+a_grep '最近 7 天有兩台的早會' "$PROG" '（hostb）hostb 這天把 proj-a 的環境弄好了'
+a_grep 'progress 有目標總表' "$PROG" '| 燈 | 目標 |'
+a_eq  'aggregate 後 repo 乾淨（已 commit）' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
+
+# render 一併產出
+HTML="$T/data/web/progress.html"
+[ -f "$HTML" ] && ok 'render 產出 progress.html' || bad 'render 產出 progress.html' '缺'
+a_grep '  html 有目標與狀態' "$HTML" 'class="tag s-warn">partial'
+a_grep '  html 有 O9 旋鈕表' "$HTML" 'standup_lines'
+a_grep '  html 是自足的（沒有外部資源）' "$HTML" '<style>'
+a_ngrep '  html 無外連 script' "$HTML" 'src="http'
+
+# 非 aggregator 被擋
+sed -i 's/^role: aggregator/role: node/' "$T/cfg/host.yml"
+TODAY=2026-07-15 MODE=ok J aggregate > "$T/agg3.log" 2>&1
+a_nz '非 aggregator 寫 progress 被擋' $?
+a_grep '  錯誤訊息引用規則' "$T/agg3.log" '不是 aggregator'
+TODAY=2026-07-15 MODE=ok J aggregate --preview > "$T/agg4.log" 2>&1
+a_rc '--preview 任何機器可跑' $? 0
+sed -i 's/^role: node/role: aggregator/' "$T/cfg/host.yml"
+
+# trace：跨天跨機串線
+TODAY=2026-07-15 MODE=ok J trace proj-a > "$T/trace.out" 2>&1
+a_grep 'trace 串到本機那天' "$T/trace.out" '2026-07-15 @ testhost'
+a_grep 'trace 串到 hostb 那天' "$T/trace.out" '2026-07-14 @ hostb'
+a_grep '  條目帶內容' "$T/trace.out" 'hostb 上環境就緒'
+
+# digest：該週（2026-07-15 落在 2026-W29）
+TODAY=2026-07-15 MODE=ok J digest 2026-W29 > "$T/digest.out" 2>&1
+a_rc 'digest 成功' $? 0
+WEEKF="$T/data/weekly/2026-W29.md"
+a_grep '週報檔落地' "$WEEKF" '## 本週主線'
+a_grep '  frontmatter 有週起點' "$WEEKF" 'week_start: 2026-07-13'
+a_grep 'progress 指令可讀' "$PROG" '# progress'
 
 # ================================================================ 結果
 

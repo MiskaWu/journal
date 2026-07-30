@@ -61,8 +61,10 @@ jr_detect_os() {
 # 就生效，而不是等 push 時才 rebase 進來。失敗不阻塞：離線照跑，用舊設定。
 jr_data_pull() {
 	git -C "$JR_DATA_DIR" remote get-url origin > /dev/null 2>&1 || return 0
+	# --autostash：人剛編到一半的 GOALS.md 不該把每日同步整個擋死；
+	# 真正的 rebase 衝突仍然停手（fail-soft 矩陣：衝突不自動硬解）
 	GIT_TERMINAL_PROMPT=0 jr_timeout 20 \
-		git -C "$JR_DATA_DIR" pull --rebase -q 2>/dev/null \
+		git -C "$JR_DATA_DIR" pull --rebase --autostash -q 2>/dev/null \
 		|| jr_log 'pull 失敗（離線？）—— 用本地既有設定繼續'
 }
 
@@ -72,7 +74,14 @@ jr_git_commit_data() {
 		jr_warn "$JR_DATA_DIR 不是 git repo，跳過 commit"
 		return 0
 	}
-	git -C "$JR_DATA_DIR" add -A -- daily hosts status 2>/dev/null
+	# 只 add 存在的路徑 —— pathspec 指到不存在的東西，整個 add 會報錯放棄。
+	# GOALS.md / config.yml / checklists 是人編的，但它們住在資料 repo 裡：
+	# 不 commit 的話 pull --rebase 永遠被工作區擋住，中心旋鈕的傳播就斷了。
+	set --
+	for _p in daily hosts status weekly progress.md web GOALS.md config.yml checklists; do
+		[ -e "$JR_DATA_DIR/$_p" ] && set -- "$@" "$_p"
+	done
+	[ $# -gt 0 ] && git -C "$JR_DATA_DIR" add -A -- "$@" 2>/dev/null
 	if git -C "$JR_DATA_DIR" diff --cached --quiet 2>/dev/null; then
 		jr_log '沒有變更，不 commit'
 		return 0

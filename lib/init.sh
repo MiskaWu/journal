@@ -83,7 +83,9 @@ EOF
 
 	if ! git -C "$_dir" rev-parse --git-dir >/dev/null 2>&1; then
 		git -C "$_dir" init -q
-		jr_log "git init $_dir"
+		# 預設分支一律 main（symbolic-ref 對老 git 也有效，init -b 要 2.28+）
+		git -C "$_dir" symbolic-ref HEAD refs/heads/main 2>/dev/null
+		jr_log "git init $_dir（分支 main）"
 	fi
 	if [ -z "$(git -C "$_dir" log -1 --oneline 2>/dev/null)" ]; then
 		git -C "$_dir" add -A
@@ -217,10 +219,42 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+	# aggregator 才有的第二支 timer：排在各機 rollup 之後合成中心
+	if [ "${JR_ROLE:-node}" = 'aggregator' ]; then
+		_agg=$(jr_yaml_get "$JR_CONFIG_YML" aggregate_time '22:15')
+		case $_agg in [0-2][0-9]:[0-5][0-9]) ;; *) _agg='22:15' ;; esac
+		cat > "$_unitdir/journal-aggregate.service" <<EOF
+[Unit]
+Description=journal L3 aggregate
+OnFailure=journal-onfail.service
+
+[Service]
+Type=oneshot
+ExecStart=$HOME/.local/bin/journal aggregate
+EOF
+		cat > "$_unitdir/journal-aggregate.timer" <<EOF
+[Unit]
+Description=journal L3 aggregate timer
+
+[Timer]
+OnCalendar=*-*-* $_agg:00
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+	fi
+
 	systemctl --user daemon-reload
 	systemctl --user enable --now journal-rollup.timer > /dev/null 2>&1 \
 		&& jr_ok "timer 已啟用：每日 $_when（Persistent=true，錯過補跑）" \
 		|| jr_warn 'timer enable 失敗 —— systemctl --user enable --now journal-rollup.timer 手動跑一次看錯誤'
+	if [ "${JR_ROLE:-node}" = 'aggregator' ]; then
+		systemctl --user enable --now journal-aggregate.timer > /dev/null 2>&1 \
+			&& jr_ok "aggregate timer 已啟用：每日 ${_agg:-22:15}" \
+			|| jr_warn 'aggregate timer enable 失敗'
+	fi
 }
 
 jr_cmd_init() {

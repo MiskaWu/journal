@@ -29,7 +29,7 @@ _bootstrap() {
 }
 _bootstrap
 
-for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli provision init doctor; do
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli aggregate render provision init doctor; do
 	# shellcheck source=/dev/null
 	. "$JR_ROOT/lib/$_lib.sh"
 done
@@ -57,6 +57,12 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   hosts                   列出已註冊機器、角色、健康度、last_seen
   uninstall [--purge]     移除 hook 與 timer（--purge 連資料、設定、金鑰一起刪）
   revoke <host>           從別台跑：標記 retired 並提示撤 deploy key
+  aggregate [--preview]   ★ 僅 aggregator：合成 progress.md + render + push。
+                          --preview 任何機器可跑，只印不寫
+  render                  progress 資料 → web/progress.html（自足靜態頁）
+  trace <goal>            一個目標的跨天跨機推進線（靠 goals_touched 推斷）
+  digest [YYYY-Www]       週報：整併該週所有 daily 的早會與摘要
+  progress                印出 progress.md
   rollup [DATE] [--dry-run] [--no-commit]
                           重讀當日全部 session → 整併 → 覆寫 daily 檔。冪等，可補跑
   capture <session>|--hook
@@ -68,9 +74,6 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   check [--no-commit]     跑本機能跑的 SLI → 寫 status/<host>.yml。requires 不滿足
                           的目標標 na（不是 fail）。有 fail 時 exit 1
   version                 版本
-
-尚未實作（見 docs/DESIGN.md §14）
-  aggregate / render / digest / trace / progress   P5 · 中心
 
 環境變數
   JOURNAL_REDUCER=awk|python3|node   強制指定減量路徑（驗收用）
@@ -132,9 +135,10 @@ jr_cmd_brief() {
 	' d="$_d" "$_f"
 }
 
-jr_not_yet() {
-	jr_err "\`journal $1\` 尚未實作 —— 那是 $2（見 docs/DESIGN.md §14）"
-	return 2
+jr_cmd_show_progress() {
+	jr_load_host
+	[ -f "$JR_DATA_DIR/progress.md" ] || jr_die '還沒有 progress.md —— aggregator 跑過 journal aggregate 才有'
+	cat "$JR_DATA_DIR/progress.md"
 }
 
 _cmd=${1:-help}
@@ -153,9 +157,12 @@ case $_cmd in
 	uninstall)     jr_cmd_uninstall "$@" ;;
 	revoke)        jr_cmd_revoke "$@" ;;
 	_onfail)       jr_cmd_onfail "$@" ;;
+	aggregate)     jr_cmd_aggregate "$@" ;;
+	render)        jr_cmd_render "$@" ;;
+	trace)         jr_cmd_trace "$@" ;;
+	digest)        jr_cmd_digest "$@" ;;
 	version|--version|-V) printf 'journal %s\n' "$JR_VERSION" ;;
 	help|--help|-h) jr_usage ;;
-	aggregate|render) jr_not_yet "$_cmd" 'P5 · 中心' ;;
-	digest|trace|progress) jr_not_yet "$_cmd" 'P5 · 中心' ;;
+	progress)      jr_cmd_show_progress ;;
 	*)             jr_err "未知指令：$_cmd"; jr_usage >&2; exit 1 ;;
 esac

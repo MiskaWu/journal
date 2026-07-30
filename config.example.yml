@@ -71,3 +71,13 @@ standup_lines: 3
 # WSL2 關機時 timer 不存在，錯過靠 Persistent=true 下次開機補跑。
 # 改了要重跑 `journal init --local` 讓 timer 重寫。
 rollup_time: "21:30"
+
+# ---------------------------------------------------------------- 中心（P5）
+# aggregator 合成 progress.md 的時間（要排在各機 rollup_time 之後）
+aggregate_time: "22:15"
+
+# 機器沉默幾天算 stale（⚫ 沉默 alert）
+stale_days: 3
+
+# 目標幾天沒在 daily 的 goals_touched 出現算沒動（🕳 goal staleness alert）
+goal_stale_days: 7

@@ -9,8 +9,8 @@
 | 項目 | 狀態 |
 |---|---|
 | 設計 | 已定案(v5),見 [`docs/DESIGN.md`](docs/DESIGN.md) —— **本 repo 自足,不需外部連結** |
-| 實作 | **P1–P4 已完成**:log 層、即時層、目標/SLI、納管。單機全自動;新機一行接入(`journal-bootstrap.sh`)。P5 中心未動工 |
-| 待拍板 | O3(GOALS 播種)· O5(aggregator 指定)· O7(transcript 保留期)· O8(程式碼 repo 公開與否) |
+| 實作 | **P1–P5 全部完成**:log 層、即時層、目標/SLI、納管、中心(aggregate/render/trace/digest)。多機驗收待第二台機器納管 |
+| 待拍板 | O3(GOALS 播種,infra 機納管時做)· O7(transcript 保留期)。O5=infra(dev 暫代)、O8=公開 已定 |
 
 ## 現在能做什麼
 
