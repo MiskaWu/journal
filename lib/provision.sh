@@ -102,6 +102,15 @@ jr_wire_remote() {
 	else
 		git -C "$JR_DATA_DIR" remote add origin "$_url"
 	fi
+	# 歷史分岔守門：本地是後來 seed 的骨架、遠端已有歷史 → 停手指路，不硬推
+	_br=$(git -C "$JR_DATA_DIR" branch --show-current)
+	if GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15' 		git -C "$JR_DATA_DIR" fetch -q origin "$_br" 2>/dev/null; then
+		if git -C "$JR_DATA_DIR" rev-parse -q --verify "origin/$_br" > /dev/null 2>&1 			&& ! git -C "$JR_DATA_DIR" merge-base HEAD "origin/$_br" > /dev/null 2>&1; then
+			jr_err '本地資料 repo 與遠端歷史不相干（本地是後來 seed 出來的骨架？）'
+			jr_info "確認本地沒有要保留的東西後：rm -rf $JR_DATA_DIR，再重跑同一個 init（會改用 clone）"
+			return 1
+		fi
+	fi
 	jr_ok "資料 repo remote → $_url"
 }
 

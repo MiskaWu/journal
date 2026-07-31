@@ -532,6 +532,7 @@ printf '\n== 9 · 納管 ==\n'
 
 # 端到端自檢：拿本地 bare repo 當 origin，全鏈真 push
 git init -q --bare "$T/origin.git"
+git --git-dir "$T/origin.git" symbolic-ref HEAD refs/heads/main
 MODE=ok J init --data-remote "$T/origin.git" > "$T/init-full.log" 2>&1
 a_rc '完整 init（含端到端自檢）成功' $? 0
 a_grep '  自檢真的跑了' "$T/init-full.log" '端到端自檢通過'
@@ -708,6 +709,49 @@ WEEKF="$T/data/weekly/2026-W29.md"
 a_grep '週報檔落地' "$WEEKF" '## 本週主線'
 a_grep '  frontmatter 有週起點' "$WEEKF" 'week_start: 2026-07-13'
 a_grep 'progress 指令可讀' "$PROG" '# progress'
+
+# ================================================================ 11 · 第二台機器（infra 模擬）
+
+printf '\n== 11 · 第二台機器 ==\n'
+
+# 全新身分 + --data-remote → 必須 clone 既有歷史，不是 seed 分岔
+J2() {
+	env HOME="$T/home2" JR_CONFIG_HOME="$T/cfg2" CLAUDE_CONFIG_DIR="$T/claude" \
+		CLAUDE_SHIM_MODE=ok JOURNAL_NO_TIMER=1 JOURNAL_TODAY=2026-07-15 \
+		PATH="$T/bin:$PATH" "$BIN" "$@"
+}
+mkdir -p "$T/home2" "$T/cfg2"
+J2 init --host-id host2 --data-dir "$T/data2" --data-remote "$T/origin.git" > "$T/init2.log" 2>&1
+a_rc '第二台 init（clone 路徑）成功' $? 0
+a_grep '  真的走了 clone' "$T/init2.log" 'clone 資料 repo'
+[ -f "$T/data2/daily/2026-07-15__testhost.md" ] && ok '  clone 到既有歷史（看得到第一台的 daily）' \
+	|| bad '  clone 到既有歷史' '沒有第一台的 daily'
+a_grep '  自檢通過' "$T/init2.log" '端到端自檢通過'
+a_grep '  第二台已註冊進 hosts/' "$T/data2/hosts/host2.yml" 'host: host2'
+
+# 兩台聚合驗收：第二台 push 的註冊，第一台 pull 後 aggregate 看得到
+MODE=ok J rollup 2026-07-15 > /dev/null 2>&1   # 觸發第一台 pull
+a_grep '第一台 pull 到第二台的註冊' "$T/data/hosts/host2.yml" 'host: host2'
+TODAY=2026-07-15 MODE=ok J aggregate > /dev/null 2>&1
+a_grep 'progress 同時反映兩台' "$T/data/progress.md" 'host2'
+
+# 歷史分岔守門：先 seed 本地、再接不相干 remote → 必須被擋
+mkdir -p "$T/cfg3" "$T/home3"
+env HOME="$T/home3" JR_CONFIG_HOME="$T/cfg3" CLAUDE_CONFIG_DIR="$T/claude" \
+	CLAUDE_SHIM_MODE=ok JOURNAL_NO_TIMER=1 PATH="$T/bin:$PATH" \
+	"$BIN" init --local --host-id host3 --data-dir "$T/data3" > /dev/null 2>&1
+env HOME="$T/home3" JR_CONFIG_HOME="$T/cfg3" CLAUDE_CONFIG_DIR="$T/claude" \
+	CLAUDE_SHIM_MODE=ok JOURNAL_NO_TIMER=1 PATH="$T/bin:$PATH" \
+	"$BIN" init --host-id host3 --data-dir "$T/data3" --data-remote "$T/origin.git" > "$T/init3.log" 2>&1
+a_nz '分岔守門：seed 過的本地接既有 remote 被擋' $?
+a_grep '  指路訊息' "$T/init3.log" '歷史不相干'
+
+# 降級：aggregator → node
+sed -i 's/^role: aggregator/role: node/' "$T/cfg/host.yml" 2>/dev/null || true
+MODE=ok J init --data-remote "$T/origin.git" --role node > /dev/null 2>&1
+a_grep '--role node 真的降級' "$T/cfg/host.yml" 'role: node'
+MODE=ok J init --data-remote "$T/origin.git" --role aggregator --force-takeover > /dev/null 2>&1
+a_grep '  再升回 aggregator（收尾）' "$T/cfg/host.yml" 'role: aggregator'
 
 # ================================================================ 結果
 
