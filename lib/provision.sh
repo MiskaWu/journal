@@ -151,11 +151,17 @@ jr_selfcheck() {
 	_gitssh=$JR_GIT_SSH
 
 	# 先同步再自檢 —— 別台機器可能剛推過（多機常態），不拉就 commit 會被
-	# non-fast-forward 擋在 push。衝突照舊停手不硬解。
-	if ! GIT_SSH_COMMAND=$_gitssh jr_timeout 30 \
-		git -C "$JR_DATA_DIR" pull --rebase --autostash -q 2> "$JR_TMPDIR/pull.err"; then
-		jr_err "自檢前同步失敗：$(grep -m1 -E 'error:|fatal:|CONFLICT' "$JR_TMPDIR/pull.err" || sed -n 1p "$JR_TMPDIR/pull.err")"
-		return 1
+	# non-fast-forward 擋在 push。全新空 remote（第一台）沒有遠端分支可拉，
+	# fetch 不到就直接跳過；真衝突照舊停手不硬解。
+	_sbr=$(git -C "$JR_DATA_DIR" branch --show-current)
+	if GIT_SSH_COMMAND=$_gitssh jr_timeout 30 \
+		git -C "$JR_DATA_DIR" fetch -q origin "$_sbr" 2>/dev/null \
+		&& git -C "$JR_DATA_DIR" rev-parse -q --verify "origin/$_sbr" > /dev/null 2>&1; then
+		if ! git -C "$JR_DATA_DIR" rebase --autostash -q "origin/$_sbr" 2> "$JR_TMPDIR/pull.err"; then
+			git -C "$JR_DATA_DIR" rebase --abort 2>/dev/null
+			jr_err "自檢前同步失敗：$(grep -m1 -E 'error:|fatal:|CONFLICT' "$JR_TMPDIR/pull.err" || sed -n 1p "$JR_TMPDIR/pull.err")"
+			return 1
+		fi
 	fi
 
 	jr_log '端到端自檢：測試 capture → gate → commit → push → 驗證 → 還原'
