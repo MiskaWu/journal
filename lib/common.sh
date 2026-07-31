@@ -6,11 +6,38 @@
 # ---------------------------------------------------------------- 全域
 
 JR_VERSION='0.1.0'
-# journal 所有背景 git 操作共用的 ssh 選項：
-#   BatchMode        —— 背景路徑絕不互動（D17）
-#   accept-new       —— 新機器第一次連 provider 不會卡在 host key 確認；
-#                       金鑰「改變」仍然會擋（防的是中途換人，不是首次信任）
-JR_GIT_SSH='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15'
+# journal 所有背景 git 操作共用的 ssh 選項。BatchMode = 背景絕不互動（D17）。
+# 首次連線的 host key 信任不在這裡處理 —— accept-new 是 OpenSSH 7.6+ 才有，
+# 老版本會退回 ask、在 BatchMode 下必死；改由 jr_ensure_known_host 用
+# ssh-keyscan 預收指紋（各版本皆通）。
+JR_GIT_SSH='ssh -o BatchMode=yes -o ConnectTimeout=15'
+
+# 第一次連 provider 前把它的 host key 收進 known_hosts（TOFU：首次信任、
+# 之後指紋改變 ssh 仍會擋）。已收錄就不動。
+jr_ensure_known_host() {
+	_kh_host=$1
+	[ -n "$_kh_host" ] || return 0
+	ssh-keygen -F "$_kh_host" > /dev/null 2>&1 && return 0
+	jr_has ssh-keyscan || { jr_warn "沒有 ssh-keyscan，請手動：ssh-keyscan $_kh_host >> ~/.ssh/known_hosts"; return 1; }
+	mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+	if ssh-keyscan -T 10 "$_kh_host" 2>/dev/null >> "$HOME/.ssh/known_hosts"; then
+		jr_ok "known_hosts 已收錄 $_kh_host（首次信任；之後指紋改變仍會擋）"
+	else
+		jr_warn "ssh-keyscan $_kh_host 失敗（離線？）"
+		return 1
+	fi
+}
+
+# 從 remote URL 取要連的真實主機（journal 的 alias 一律映回 github.com）
+jr_remote_ssh_host() {
+	case $1 in
+		*@*:*) _h=${1#*@}; _h=${_h%%:*} ;;
+		ssh://*) _h=${1#ssh://}; _h=${_h#*@}; _h=${_h%%[:/]*} ;;
+		*) printf ''; return 0 ;;
+	esac
+	case $_h in journal.*) _h=${_h#journal.} ;; esac
+	printf '%s' "$_h"
+}
 : "${JR_CONFIG_HOME:=${XDG_CONFIG_HOME:-$HOME/.config}/journal}"
 JR_HOST_YML="$JR_CONFIG_HOME/host.yml"
 
