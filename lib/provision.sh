@@ -150,6 +150,14 @@ jr_selfcheck() {
 	jr_ensure_known_host "$(jr_remote_ssh_host "$(git -C "$JR_DATA_DIR" remote get-url origin 2>/dev/null)")"
 	_gitssh=$JR_GIT_SSH
 
+	# 先同步再自檢 —— 別台機器可能剛推過（多機常態），不拉就 commit 會被
+	# non-fast-forward 擋在 push。衝突照舊停手不硬解。
+	if ! GIT_SSH_COMMAND=$_gitssh jr_timeout 30 \
+		git -C "$JR_DATA_DIR" pull --rebase --autostash -q 2> "$JR_TMPDIR/pull.err"; then
+		jr_err "自檢前同步失敗：$(grep -m1 -E 'error:|fatal:|CONFLICT' "$JR_TMPDIR/pull.err" || sed -n 1p "$JR_TMPDIR/pull.err")"
+		return 1
+	fi
+
 	jr_log '端到端自檢：測試 capture → gate → commit → push → 驗證 → 還原'
 	_f="$JR_DATA_DIR/status/.selfcheck-$JR_HOST"
 	printf 'selfcheck %s\ntoken 測試：glpat-SELFCHECK0000000000\n' "$(jr_now_iso)" > "$_f"
@@ -168,7 +176,7 @@ jr_selfcheck() {
 		commit -q -m "journal: selfcheck @ $JR_HOST"
 	if ! GIT_SSH_COMMAND=$_gitssh jr_timeout 30 \
 		git -C "$JR_DATA_DIR" push -q -u origin "$_branch" 2> "$JR_TMPDIR/push.err"; then
-		jr_err "自檢失敗：push 不出去 —— $(sed -n 1p "$JR_TMPDIR/push.err")"
+		jr_err "自檢失敗：push 不出去 —— $(grep -m1 -E '\[(rejected|remote rejected)\]|error:|fatal:|denied' "$JR_TMPDIR/push.err" || sed -n 1p "$JR_TMPDIR/push.err")"
 		git -C "$JR_DATA_DIR" reset -q --hard HEAD~1
 		return 1
 	fi
