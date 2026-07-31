@@ -24,6 +24,11 @@ journal rollup [DATE]           # 手動整併／補跑任意日期（冪等）
 journal doctor --check          # 環境自檢，以 exit code 表示
 ```
 
+**控制台**：用瀏覽器開 `console/index.html`（零後端 —— 直連 GitHub API）。
+總攬燈號、daily 三層瀏覽、目標軌跡、週報，以及**旋鈕面板**：改 `standup_lines`／
+蒸餾模型／排程時間，按儲存就是一個 commit，各機下一輪 pull 生效。首次使用貼一把
+fine-grained PAT（只授權 journal-data 的 Contents），存在瀏覽器本機。
+
 裝好之後就不用管它:每關一個 Claude session,`SessionEnd` hook 背景蒸餾該
 session 追進當日檔(L1,秒級返回不卡關窗);每晚 timer 重讀全天素材整併定稿
 (L2,`Persistent=true` 錯過補跑)。多機聚合與中心視圖是 P4/P5。
