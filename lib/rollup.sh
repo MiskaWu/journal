@@ -63,7 +63,7 @@ jr_data_pull() {
 	git -C "$JR_DATA_DIR" remote get-url origin > /dev/null 2>&1 || return 0
 	# --autostash：人剛編到一半的 GOALS.md 不該把每日同步整個擋死；
 	# 真正的 rebase 衝突仍然停手（fail-soft 矩陣：衝突不自動硬解）
-	GIT_TERMINAL_PROMPT=0 jr_timeout 20 \
+	GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$JR_GIT_SSH" jr_timeout 20 \
 		git -C "$JR_DATA_DIR" pull --rebase --autostash -q 2>/dev/null \
 		|| jr_log 'pull 失敗（離線？）—— 用本地既有設定繼續'
 }
@@ -93,8 +93,8 @@ jr_git_commit_data() {
 
 	# P1 是單機離線層 —— 沒有 remote 就到此為止，不是錯誤。
 	if git -C "$JR_DATA_DIR" remote get-url origin >/dev/null 2>&1; then
-		if git -C "$JR_DATA_DIR" pull --rebase -q 2>/dev/null; then
-			git -C "$JR_DATA_DIR" push -q 2>/dev/null \
+		if GIT_SSH_COMMAND="$JR_GIT_SSH" git -C "$JR_DATA_DIR" pull --rebase --autostash -q 2>/dev/null; then
+			GIT_SSH_COMMAND="$JR_GIT_SSH" git -C "$JR_DATA_DIR" push -q 2>/dev/null \
 				&& jr_ok ' 已 push' || jr_warn 'push 失敗，commit 留在本地，下次重試'
 		else
 			jr_warn 'pull --rebase 失敗（可能有衝突）—— 不自動硬解，請人工處理'
