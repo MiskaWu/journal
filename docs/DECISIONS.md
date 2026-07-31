@@ -32,7 +32,7 @@
 | **O5** | aggregator 指定哪台? | infra 機(24/7 常開)。**2026-07-30 起由 dev 機暫代**(單機期「常開」無意義 —— 資料只在這台產生);infra 機納管時以 `journal init --role aggregator --force-takeover` 接手。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議在 `~/.claude/settings.json` 加 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,不代為決定。 |
 | **O8** | 程式碼 repo 要不要公開? | ~~預設私有~~ → **已實質定案為公開**(2026-07-29 推上 GitHub 時使用者建為 public repo)。 |
-| **O9** | **中心 web 的可控旋鈕怎麼實作?** | 需求(2026-07-29 使用者明示):今天引入的可控項 —— `standup_lines`(早會力度)、`model_rollup`/`model_capture`(蒸餾模型)、`rollup_time`(整併時間)、摘要分組軸、價值門檻(未來)—— **都要能從中心 web 調整**,之後新增的旋鈕一律比照。分兩類:**檢視類**(分組軸、展開狀態)純前端 localStorage 即可,零張力;**生成類**(`standup_lines`、門檻)要寫回資料 repo 的 `config.yml`,與鐵律 4(不建控制平面)有張力。P5 拍板實作路徑,候選:①中心頁放設定表單,產生一行指令由人貼到任一台執行;②**直接連到 git provider 的 config.yml 網頁編輯**(零新服務,aggregator 本來就會 pull —— 預設傾向);③aggregator 上極小的寫入端點(限內網,最重,最後手段)。 |
+| **O9** | **中心 web 的可控旋鈕怎麼實作?** | 需求(2026-07-29 使用者明示):今天引入的可控項 —— `standup_lines`(早會力度)、`model_rollup`/`model_capture`(蒸餾模型)、`rollup_time`(整併時間)、摘要分組軸、價值門檻(未來)—— **都要能從中心 web 調整**,之後新增的旋鈕一律比照。分兩類:**檢視類**(分組軸、展開狀態)純前端 localStorage 即可,零張力;**生成類**(`standup_lines`、門檻)要寫回資料 repo 的 `config.yml`,與鐵律 4(不建控制平面)有張力。**2026-07-30 拍板:GitHub API 直連、零後端**(`console/index.html`)—— 瀏覽器用 fine-grained PAT(只授權 journal-data 的 Contents:RW)直讀 status/hosts/daily 即時渲染總攬,改旋鈕 = 頁面代打一個 commit 到 config.yml,各機下一輪 pull 生效。不架任何服務,鐵律 4 完好;PAT 只存使用者瀏覽器 localStorage。使用者原話:「目前的報告也太像報告」—— 要的是駕駛艙不是文件,靜態 render 頁降級為無 PAT 時的唯讀備援。 |
 
 ## 已關閉
 

@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>journal 控制台</title>
+<style>
+/* ═══ tokens ═══ */
+:root {
+	--paper:#F6F7F3; --panel:#FDFDFB; --ink:#232820; --muted:#6C7365; --faint:#9AA090;
+	--line:#DFE3D6; --accent:#35684A; --soft:#E3ECE4;
+	--ok:#35684A; --ok-bg:#E8F0E9; --fix:#3E7A74; --fix-bg:#E2EFEC;
+	--warn:#8A6B33; --warn-bg:#F3EDDE; --bad:#96453D; --bad-bg:#F5E7E4;
+	--info:#4A5880; --info-bg:#E9ECF4; --mute-bg:#ECEEE6;
+	--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+	--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+	--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+	--paper:#171A15; --panel:#1E221C; --ink:#E1E5DA; --muted:#98A08E; --faint:#6E7565;
+	--line:#2E332A; --accent:#82B394; --soft:#24352B;
+	--ok:#82B394; --ok-bg:#22312A; --fix:#85B8B1; --fix-bg:#203330;
+	--warn:#CBA65E; --warn-bg:#35301F; --bad:#D08A80; --bad-bg:#3A2724;
+	--info:#9FAED4; --info-bg:#262B3A; --mute-bg:#272C23; } }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink);
+	font:15px/1.75 var(--sans); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1100px; margin:0 auto; padding:0 20px 80px; }
+button { font-family:inherit; cursor:pointer; }
+input, select { font-family:inherit; font-size:.9rem; color:var(--ink);
+	background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:5px 9px; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+code { font-family:var(--mono); font-size:.86em; background:var(--mute-bg);
+	border-radius:4px; padding:1px 5px; overflow-wrap:anywhere; }
+code.hash { color:var(--accent); }
+
+/* ═══ 頁頭與導覽 ═══ */
+.masthead { display:flex; align-items:center; gap:12px; padding:18px 0 12px;
+	border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.wordmark { font-family:var(--serif); font-size:1.4rem; font-weight:600; }
+.repo-chip { font-family:var(--mono); font-size:.74rem; color:var(--muted);
+	background:var(--soft); border-radius:4px; padding:2px 8px; }
+.masthead .sp { margin-left:auto; display:flex; gap:8px; align-items:center; }
+.ghost { background:none; border:1px solid var(--line); border-radius:6px;
+	padding:4px 12px; color:var(--muted); font-size:.82rem; }
+.ghost:hover { color:var(--ink); background:var(--panel); }
+nav.tabs { display:flex; gap:4px; padding:10px 0; overflow-x:auto; }
+nav.tabs button { border:none; background:none; padding:6px 14px; border-radius:7px;
+	color:var(--muted); font-size:.9rem; white-space:nowrap; }
+nav.tabs button.on { background:var(--soft); color:var(--accent); font-weight:700; }
+
+/* ═══ 共用元件 ═══ */
+h2.sec { font-size:.88rem; letter-spacing:.12em; color:var(--accent); margin:26px 0 10px; }
+.tag { display:inline-block; border-radius:5px; padding:0 8px;
+	font-size:.74rem; font-weight:700; white-space:nowrap; }
+.t-pass{color:var(--ok);background:var(--ok-bg);} .t-partial{color:var(--warn);background:var(--warn-bg);}
+.t-fail{color:var(--bad);background:var(--bad-bg);} .t-manual{color:var(--info);background:var(--info-bg);}
+.t-unchecked,.t-mute{color:var(--faint);background:var(--mute-bg);}
+.k-功能{color:var(--ok);background:var(--ok-bg);} .k-修復{color:var(--fix);background:var(--fix-bg);}
+.k-進度{color:var(--warn);background:var(--warn-bg);} .k-拍板{color:var(--info);background:var(--info-bg);}
+.k-卡住{color:var(--bad);background:var(--bad-bg);} .k-其他{color:var(--muted);background:var(--mute-bg);}
+.card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+.alert { border-left:4px solid var(--bad); }
+.alert.calm { border-left-color:var(--ok); color:var(--muted); }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
+.tile { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:11px 14px; }
+.tile .id { font-weight:700; margin:4px 0 2px; overflow-wrap:anywhere; }
+.tile .ttl { font-size:.8rem; color:var(--muted); }
+.tile .meta { font-size:.72rem; color:var(--faint); margin-top:6px; font-variant-numeric:tabular-nums; }
+.hostrow { display:flex; flex-wrap:wrap; gap:8px; }
+.hostchip { display:flex; align-items:center; gap:8px; background:var(--panel);
+	border:1px solid var(--line); border-radius:999px; padding:4px 14px; font-size:.85rem; }
+.dot { width:9px; height:9px; border-radius:50%; flex:none; }
+.d-ok{background:var(--ok);} .d-degraded{background:var(--warn);}
+.d-fail{background:var(--bad);} .d-silent{background:var(--faint);}
+ul.plain { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+ul.plain li { background:var(--panel); border:1px solid var(--line);
+	border-radius:8px; padding:8px 13px; overflow-wrap:break-word; }
+.toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+	background:var(--ink); color:var(--paper); border-radius:8px; padding:9px 18px;
+	font-size:.88rem; opacity:0; transition:opacity .2s; pointer-events:none; z-index:9; }
+.toast.show { opacity:.95; }
+.dim { color:var(--faint); font-size:.82rem; }
+.spin { color:var(--faint); padding:40px 0; text-align:center; }
+
+/* ═══ 早會/摘要/細節（駕駛艙內的 daily 瀏覽）═══ */
+.standup { background:var(--panel); border:1px solid var(--line);
+	border-left:4px solid var(--accent); border-radius:10px; padding:12px 16px; margin:10px 0 4px; }
+.standup .sh { font-size:.7rem; font-weight:700; letter-spacing:.14em; color:var(--accent); margin:0 0 4px; }
+.standup p { margin:4px 0; font-size:.98rem; }
+.standup p.red { color:var(--bad); }
+.standup p.red::before { content:'● '; font-size:.7em; vertical-align:2px; }
+.briefhead { display:flex; align-items:center; gap:10px; margin:20px 0 8px; flex-wrap:wrap; }
+.briefhead h3 { font-size:.85rem; letter-spacing:.12em; color:var(--accent); margin:0; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:7px;
+	overflow:hidden; background:var(--panel); margin-left:auto; }
+.seg button { border:none; background:none; font-size:.74rem; padding:3px 11px; color:var(--muted); }
+.seg button + button { border-left:1px solid var(--line); }
+.seg button.on { background:var(--soft); color:var(--accent); font-weight:700; }
+.sgroup { margin:0 0 12px; }
+.sgroup .gh { font-size:.78rem; font-weight:700; color:var(--muted); margin:0 0 5px 2px; }
+.sgroup li { display:flex; gap:9px; align-items:baseline; }
+.sgroup .who { font-weight:700; }
+details.raw { margin-top:18px; }
+details.raw > summary { cursor:pointer; list-style:none; font-size:.82rem; color:var(--muted);
+	border:1px dashed var(--line); border-radius:8px; padding:7px 13px; user-select:none; }
+details.raw > summary::before { content:'▸ '; color:var(--faint); }
+details.raw[open] > summary::before { content:'▾ '; }
+section.block { margin-top:18px; }
+section.block h4 { font-size:.82rem; letter-spacing:.1em; margin:0 0 8px; display:flex; gap:8px; align-items:center; }
+.s-done h4{color:var(--ok);} .s-decide h4{color:var(--info);}
+.s-next h4{color:var(--warn);} .s-stuck h4{color:var(--bad);}
+.s-done li{border-left:3px solid var(--ok);} .s-decide li{border-left:3px solid var(--info);}
+.s-next li{border-left:3px solid var(--warn);} .s-stuck li{border-left:3px solid var(--bad);}
+.daynav { display:flex; gap:6px; overflow-x:auto; padding:8px 0; }
+.daynav button { border:1px solid var(--line); background:var(--panel); border-radius:7px;
+	padding:4px 12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.daynav button.on { border-color:var(--accent); color:var(--accent); font-weight:700; }
+
+/* ═══ 旋鈕 ═══ */
+.knob { display:grid; grid-template-columns:190px 1fr; gap:6px 16px; align-items:center;
+	padding:11px 0; border-bottom:1px solid var(--line); }
+.knob:last-child { border-bottom:none; }
+.knob .kname { font-family:var(--mono); font-size:.85rem; }
+.knob .kdesc { grid-column:1 / -1; font-size:.76rem; color:var(--faint); margin-top:-4px; }
+.knob input[type=range] { accent-color:var(--accent); width:200px; vertical-align:middle; }
+.savebar { display:flex; gap:10px; align-items:center; margin-top:14px; }
+.primary { background:var(--accent); color:var(--paper); border:none;
+	border-radius:7px; padding:7px 18px; font-weight:700; }
+.primary:disabled { opacity:.45; cursor:default; }
+
+/* ═══ 設定 ═══ */
+.setup { max-width:34em; }
+.setup label { display:block; font-size:.8rem; color:var(--muted); margin:12px 0 4px; }
+.setup input { width:100%; }
+.setup ol { font-size:.85rem; color:var(--muted); padding-left:1.4em; }
+@media (max-width:640px) { .knob { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+	<header class="masthead">
+		<span class="wordmark">journal 控制台</span>
+		<span class="repo-chip" id="repoChip">未連線</span>
+		<span class="sp">
+			<span class="dim" id="freshness"></span>
+			<button class="ghost" id="btnRefresh" title="重新拉取">↻ 更新</button>
+		</span>
+	</header>
+	<nav class="tabs" id="tabs"></nav>
+	<main id="view"><div class="spin">載入中…</div></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════
+   journal 控制台 —— 零後端：瀏覽器直連 GitHub API（O9 拍板 2026-07-30）。
+   讀 = contents API 拉 journal-data 即時渲染；寫 = PUT config.yml（一個
+   commit），各機下一輪 pull 生效。PAT 只存 localStorage，不出這台瀏覽器。
+   ════════════════════════════════════════════════════════════════ */
+
+const LS = { pat:'jc.pat', owner:'jc.owner', repo:'jc.repo', branch:'jc.branch', axis:'jc.axis' };
+const S = {
+	pat: localStorage.getItem(LS.pat) || '',
+	owner: localStorage.getItem(LS.owner) || 'MiskaWu',
+	repo: localStorage.getItem(LS.repo) || 'journal-data',
+	branch: localStorage.getItem(LS.branch) || 'main',
+	axis: localStorage.getItem(LS.axis) || 'project',
+	config: { raw:'', sha:'' },
+	goalDefs: [], statuses: [], hosts: [], dailies: [], weeklies: [],
+	loadedAt: null, tab: 'overview', currentDate: null, traceGoal: '',
+};
+
+/* ─── GitHub API ─────────────────────────────────────────────── */
+class AuthErr extends Error {}
+async function gh(path, opts = {}) {
+	const r = await fetch(`https://api.github.com/repos/${S.owner}/${S.repo}/${path}`, {
+		method: opts.method || 'GET',
+		headers: {
+			'Authorization': `Bearer ${S.pat}`,
+			'Accept': opts.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json',
+			'X-GitHub-Api-Version': '2022-11-28',
+			...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+		},
+		body: opts.body ? JSON.stringify(opts.body) : undefined,
+	});
+	if (r.status === 401 || r.status === 403) throw new AuthErr(`GitHub 拒絕（${r.status}）—— PAT 過期或權限不足`);
+	if (r.status === 404 && opts.soft) return null;
+	if (!r.ok) throw new Error(`${r.status} ${path}`);
+	return opts.raw ? r.text() : r.json();
+}
+const ghRaw = (p) => gh(`contents/${p}?ref=${S.branch}`, { raw:true, soft:true });
+const ghDir = (p) => gh(`contents/${p}?ref=${S.branch}`, { soft:true });
+
+function b64utf8(s) {
+	const b = new TextEncoder().encode(s);
+	let out = '';
+	for (let i = 0; i < b.length; i += 0x8000)
+		out += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+	return btoa(out);
+}
+
+/* ─── 剖析器（與 shell 端同一套子集）───────────────────────── */
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function inline(s) {
+	let o = esc(s);
+	o = o.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+	o = o.replace(/(^|[（(、\s])([0-9a-f]{7,10})(?=[）)、\s]|$)/g, (_, p, h) => `${p}<code class="hash">${h}</code>`);
+	return o;
+}
+function yGet(raw, key, dflt = '') {
+	const m = raw.match(new RegExp(`^${key}:[ \\t]*"?([^"#\\n]*?)"?[ \\t]*(?:#.*)?$`, 'm'));
+	return m ? m[1].trim() : dflt;
+}
+function ySet(raw, key, val) {
+	const re = new RegExp(`^${key}:.*$`, 'm');
+	const line = `${key}: ${/[:#]|^$|\s/.test(String(val)) ? `"${val}"` : val}`;
+	return re.test(raw) ? raw.replace(re, line) : raw.replace(/\s*$/, `\n${line}\n`);
+}
+function parseDaily(raw) {
+	const m = raw.match(/^\s*---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+	if (!m) return null;
+	const fm = {};
+	m[1].split('\n').forEach(l => { const i = l.indexOf(':'); if (i > 0) fm[l.slice(0,i).trim()] = l.slice(i+1).trim(); });
+	const sections = {}; let cur = null;
+	m[2].split('\n').forEach(l => {
+		const h = l.match(/^##\s+(.+?)\s*$/);
+		if (h) { cur = h[1]; sections[cur] = []; return; }
+		const li = l.match(/^-\s+(.*)$/);
+		if (li && cur) sections[cur].push(li[1]);
+	});
+	const brief = (sections['摘要'] || []).map(r => {
+		const p = r.split('|');
+		if (p.length < 4) return { project:'—', kind:'其他', tags:[], text:r.trim() };
+		return { project:p[0].trim()||'—', kind:p[1].trim()||'其他',
+			tags:p[2].split(',').map(t=>t.trim()).filter(Boolean), text:p.slice(3).join('|').trim() };
+	});
+	const mm = (fm.metrics||'').match(/sessions:\s*(\d+).*commits:\s*(\d+).*files_touched:\s*(\d+)/);
+	return {
+		date: fm.date, host: fm.host, status: fm.status || 'ok',
+		goals: (fm.goals_touched||'').replace(/[\[\]]/g,'').split(',').map(g=>g.trim()).filter(Boolean),
+		metrics: mm ? { sessions:+mm[1], commits:+mm[2], files:+mm[3] } : { sessions:0, commits:0, files:0 },
+		standup: sections['早會'] || [], brief, sections,
+		reducer: fm.reduced_by || '?', generatedAt: fm.generated_at || '',
+	};
+}
+function parseStatus(raw) {
+	const host = yGet(raw, 'host'), ts = yGet(raw, 'checked_at');
+	const results = [];
+	for (const l of raw.split('\n')) {
+		const m = l.match(/^  ([A-Za-z0-9_-]+): \{ state: ([a-z]+), kind: ([a-z?]+)(?:, detail: "([^"]*)")?/);
+		if (m) results.push({ host, ts, id:m[1], state:m[2], kind:m[3], detail:m[4]||'' });
+	}
+	return results;
+}
+function parseHost(raw) {
+	return { host:yGet(raw,'host'), roles:yGet(raw,'roles','[node]'),
+		health:yGet(raw,'agent_health','?'), reason:yGet(raw,'degraded_reason'),
+		lastSeen:yGet(raw,'last_seen'), retired:yGet(raw,'retired') };
+}
+function parseGoalDefs(raw) {
+	const out = []; let cur = null; let inc = false;
+	for (const l of (raw||'').split('\n')) {
+		if (l.includes('<!--')) inc = true;
+		if (inc) { if (l.includes('-->')) inc = false; continue; }
+		const id = l.match(/^-\s+id:\s*(\S+)/);
+		if (id) { cur = { id:id[1], title:'', done:'' }; out.push(cur); continue; }
+		if (!cur) continue;
+		if (/^\S/.test(l)) { cur = null; continue; }
+		const t = l.match(/^\s+title:\s*(.+)$/); if (t) cur.title = t[1].trim();
+		const d = l.match(/^\s+done-when:\s*(.+)$/); if (d) cur.done = d[1].trim();
+	}
+	return out;
+}
+
+/* ─── 聚合邏輯（與 lib/aggregate.sh 同一套規則）──────────────── */
+function goalWinners() {
+	const best = {}, naD = {}, seen = new Set();
+	for (const r of S.statuses) {
+		seen.add(r.id);
+		if (r.state === 'na') { if (!(r.id in naD)) naD[r.id] = r.detail; continue; }
+		if (!best[r.id] || r.ts > best[r.id].ts) best[r.id] = r;
+	}
+	return [...seen].sort().map(id => best[id] ||
+		({ id, state:'unchecked', detail:`全部 host 皆 na（${naD[id]||''}）`, host:'-', ts:'-' }));
+}
+function daysBetween(d1, d2) {
+	return Math.round((new Date(d2+'T12:00') - new Date(d1+'T12:00')) / 86400000);
+}
+function buildAlerts() {
+	const today = new Date().toISOString().slice(0,10);
+	const stale = +yGet(S.config.raw, 'stale_days', '3');
+	const gStale = +yGet(S.config.raw, 'goal_stale_days', '7');
+	const out = [];
+	for (const h of S.hosts) {
+		if (h.retired) continue;
+		const seen = (h.lastSeen||'').slice(0,10);
+		if (seen) {
+			const gap = daysBetween(seen, today);
+			if (gap > stale) out.push({ sev:'bad', text:`⚫ ${h.host} 沉默 ${gap} 天（last_seen ${seen}）—— 機器關著？agent 死了？` });
+		}
+		if (h.health === 'fail') out.push({ sev:'bad', text:`🔴 ${h.host} 不健康：${h.reason||'無原因'}` });
+		if (h.health === 'degraded') out.push({ sev:'warn', text:`🟡 ${h.host} 降級運行：${h.reason||''}` });
+	}
+	const lastTouched = {};
+	for (const d of S.dailies) for (const g of d.goals)
+		if (!lastTouched[g] || d.date > lastTouched[g]) lastTouched[g] = d.date;
+	for (const w of goalWinners()) {
+		if (w.state === 'fail') out.push({ sev:'bad', text:`🔴 目標 ${w.id} fail：${w.detail}（${w.host} 量測）` });
+		if (w.state === 'pass' || w.state === 'manual') continue;
+		const lt = lastTouched[w.id];
+		if (lt && daysBetween(lt, today) > gStale)
+			out.push({ sev:'warn', text:`🕳 目標 ${w.id} 已 ${daysBetween(lt, today)} 天沒動（最後出現 ${lt}）` });
+	}
+	return out;
+}
+
+/* ─── 載入 ───────────────────────────────────────────────────── */
+async function loadAll() {
+	view(`<div class="spin">從 GitHub 拉取中…</div>`);
+	const cfgMeta = await gh(`contents/config.yml?ref=${S.branch}`);
+	S.config = { raw: new TextDecoder().decode(Uint8Array.from(atob(cfgMeta.content.replace(/\n/g,'')), c=>c.charCodeAt(0))), sha: cfgMeta.sha };
+	const [goalsRaw, stDir, hoDir, daDir, wkDir] = await Promise.all([
+		ghRaw('GOALS.md'), ghDir('status'), ghDir('hosts'), ghDir('daily'), ghDir('weekly')]);
+	S.goalDefs = parseGoalDefs(goalsRaw || '');
+	const yml = f => f.name.endsWith('.yml');
+	S.statuses = (await Promise.all((stDir||[]).filter(yml).map(f => ghRaw(`status/${f.name}`))))
+		.filter(Boolean).flatMap(parseStatus);
+	S.hosts = (await Promise.all((hoDir||[]).filter(yml).map(f => ghRaw(`hosts/${f.name}`))))
+		.filter(Boolean).map(parseHost);
+	const dailyFiles = (daDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name)
+		.sort().reverse().slice(0, 40);
+	S.dailies = (await Promise.all(dailyFiles.map(n => ghRaw(`daily/${n}`))))
+		.filter(Boolean).map(parseDaily).filter(Boolean)
+		.sort((a,b) => a.date < b.date ? 1 : -1);
+	S.weeklies = await Promise.all(((wkDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name)
+		.sort().reverse().slice(0, 12)).map(async n => ({ name:n.replace('.md',''), raw: await ghRaw(`weekly/${n}`) })));
+	S.loadedAt = new Date();
+	document.getElementById('repoChip').textContent = `${S.owner}/${S.repo}@${S.branch}`;
+	document.getElementById('freshness').textContent = `拉取於 ${S.loadedAt.toTimeString().slice(0,5)}`;
+}
+
+/* ─── UI 基礎 ────────────────────────────────────────────────── */
+const $view = document.getElementById('view');
+function view(html) { $view.innerHTML = html; }
+function toast(msg) {
+	const t = document.getElementById('toast');
+	t.textContent = msg; t.classList.add('show');
+	setTimeout(() => t.classList.remove('show'), 2600);
+}
+const TABS = [
+	['overview','總攬'], ['daily','日誌'], ['trace','軌跡'],
+	['weekly','週報'], ['knobs','旋鈕'], ['setup','連線'],
+];
+function renderTabs() {
+	document.getElementById('tabs').innerHTML = TABS.map(([k,l]) =>
+		`<button data-tab="${k}" class="${S.tab===k?'on':''}">${l}</button>`).join('');
+}
+document.getElementById('tabs').addEventListener('click', e => {
+	const b = e.target.closest('button'); if (!b) return;
+	S.tab = b.dataset.tab; renderTabs(); render();
+});
+document.getElementById('btnRefresh').addEventListener('click', async () => {
+	try { await loadAll(); render(); toast('已更新'); }
+	catch (e) { handleErr(e); }
+});
+function handleErr(e) {
+	if (e instanceof AuthErr) { S.tab = 'setup'; renderTabs(); render(); toast(e.message); }
+	else { toast(`錯誤：${e.message}`); console.error(e); }
+}
+
+/* ─── 分頁：總攬 ─────────────────────────────────────────────── */
+function vOverview() {
+	const alerts = buildAlerts();
+	const winners = goalWinners();
+	const defs = Object.fromEntries(S.goalDefs.map(g => [g.id, g]));
+	let h = '<h2 class="sec">需要注意</h2>';
+	h += alerts.length
+		? alerts.map(a => `<div class="card alert" style="margin:8px 0">${esc(a.text)}</div>`).join('')
+		: '<div class="card alert calm">都好，沒有紅燈。</div>';
+
+	h += '<h2 class="sec">目標</h2><div class="grid">';
+	for (const w of winners) {
+		const d = defs[w.id] || {};
+		h += `<div class="tile"><span class="tag t-${esc(w.state)}">${esc(w.state)}</span>
+			<div class="id">${esc(w.id)}</div>
+			${d.title ? `<div class="ttl">${esc(d.title)}</div>` : ''}
+			<div class="meta">${esc(w.detail||'-')}<br>${esc(w.host)} · ${esc(String(w.ts).slice(0,16))}</div></div>`;
+	}
+	h += '</div>';
+
+	h += '<h2 class="sec">機器</h2><div class="hostrow">';
+	for (const x of S.hosts) {
+		const cls = x.retired ? 'silent' : (x.health==='ok'?'ok':x.health==='degraded'?'degraded':'fail');
+		h += `<span class="hostchip"><span class="dot d-${cls}"></span><b>${esc(x.host)}</b>
+			<span class="dim">${esc(x.roles)}${x.retired?' · retired':''} · ${esc((x.lastSeen||'').slice(0,16))}</span></span>`;
+	}
+	h += '</div>';
+
+	const latest = S.dailies[0];
+	if (latest) {
+		h += `<h2 class="sec">最新早會（${esc(latest.date)} · ${esc(latest.host)}）</h2>`;
+		h += standupHtml(latest);
+	}
+	view(h);
+}
+function standupHtml(d) {
+	if (!d.standup.length) return '<p class="dim">（無早會段）</p>';
+	return `<div class="standup"><p class="sh">早會</p>` + d.standup.map(l =>
+		`<p${/^紅燈[：:]/.test(l)?' class="red"':''}>${inline(l)}</p>`).join('') + '</div>';
+}
+
+/* ─── 分頁：日誌（三層瀏覽）──────────────────────────────────── */
+const KINDS = ['功能','修復','進度','拍板','卡住'];
+function vDaily() {
+	if (!S.dailies.length) return view('<p class="dim">還沒有 daily。</p>');
+	if (!S.currentDate) S.currentDate = S.dailies[0].date;
+	const dates = [...new Set(S.dailies.map(d => d.date))];
+	let h = `<div class="daynav">` + dates.map(dt =>
+		`<button data-date="${dt}" class="${dt===S.currentDate?'on':''}">${dt.slice(5).replace('-','.')}</button>`).join('') + '</div>';
+	for (const d of S.dailies.filter(x => x.date === S.currentDate)) {
+		h += `<h2 class="sec">${esc(d.date)} · ${esc(d.host)}
+			<span class="dim">${d.metrics.sessions} sessions · ${d.metrics.commits} commits</span></h2>`;
+		if (d.status === 'no-material') { h += '<p class="dim">這天沒有素材。</p>'; continue; }
+		h += standupHtml(d);
+		h += briefHtml(d);
+		h += detailsHtml(d);
+	}
+	view(h);
+	$view.querySelectorAll('.daynav button').forEach(b =>
+		b.addEventListener('click', () => { S.currentDate = b.dataset.date; vDaily(); }));
+	$view.querySelectorAll('.seg button').forEach(b =>
+		b.addEventListener('click', () => {
+			S.axis = b.dataset.axis; localStorage.setItem(LS.axis, S.axis); vDaily();
+		}));
+}
+function briefHtml(d) {
+	if (!d.brief.length) return '';
+	const AXES = [['project','專案'],['kind','類型'],['tag','標籤']];
+	let h = `<div class="briefhead"><h3>摘要</h3><div class="seg">` +
+		AXES.map(([k,l]) => `<button data-axis="${k}" class="${S.axis===k?'on':''}">${l}</button>`).join('') +
+		'</div></div>';
+	const groups = new Map();
+	const put = (k, it) => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); };
+	for (const it of d.brief) {
+		if (S.axis === 'project') put(it.project, it);
+		else if (S.axis === 'kind') put(it.kind, it);
+		else it.tags.length ? it.tags.forEach(t => put('#'+t, it)) : put('（無標籤）', it);
+	}
+	const keys = [...groups.keys()];
+	if (S.axis === 'kind') keys.sort((a,b) => (KINDS.indexOf(a)+99)%100 - (KINDS.indexOf(b)+99)%100);
+	else keys.sort((a,b) => (groups.get(a).every(i=>i.kind==='卡住')?1:0) - (groups.get(b).every(i=>i.kind==='卡住')?1:0));
+	for (const k of keys) {
+		h += `<div class="sgroup"><p class="gh">${esc(k)}</p><ul class="plain">`;
+		for (const it of groups.get(k)) {
+			h += `<li><span class="tag k-${KINDS.includes(it.kind)?it.kind:'其他'}">${esc(it.kind)}</span><span>` +
+				(S.axis !== 'project' && it.project !== '—' ? `<span class="who">${esc(it.project)}</span>· ` : '') +
+				inline(it.text) + '</span></li>';
+		}
+		h += '</ul></div>';
+	}
+	return h;
+}
+function detailsHtml(d) {
+	const SEC = [['完成','s-done'],['拍板','s-decide'],['待續','s-next'],['卡住','s-stuck']];
+	const counts = SEC.map(([k]) => `${k} ${(d.sections[k]||[]).length}`).join(' · ');
+	let h = `<details class="raw"><summary>細節 — ${counts}</summary>`;
+	for (const [k, cls] of SEC) {
+		const items = d.sections[k] || [];
+		h += `<section class="block ${cls}"><h4>${k}${items.length?` <span class="dim">${items.length}</span>`:''}</h4>`;
+		h += items.length
+			? `<ul class="plain">${items.map(i=>`<li>${inline(i)}</li>`).join('')}</ul>`
+			: '<p class="dim">—</p>';
+		h += '</section>';
+	}
+	return h + '</details>';
+}
+
+/* ─── 分頁：軌跡 ─────────────────────────────────────────────── */
+function vTrace() {
+	const all = new Set(S.goalDefs.map(g => g.id));
+	for (const d of S.dailies) for (const g of d.goals) all.add(g);
+	const goals = [...all].sort();
+	if (!S.traceGoal && goals.length) S.traceGoal = goals[0];
+	let h = `<h2 class="sec">目標推進線</h2>
+		<p><select id="traceSel">${goals.map(g =>
+			`<option ${g===S.traceGoal?'selected':''}>${esc(g)}</option>`).join('')}</select>
+		<span class="dim">　靠 goals_touched 推斷串線 —— 導覽用，不是證據</span></p>`;
+	const hits = S.dailies.filter(d => d.goals.includes(S.traceGoal)).sort((a,b)=>a.date<b.date?1:-1);
+	if (!hits.length) h += '<p class="dim">沒有任何 daily 標記過這個目標。</p>';
+	for (const d of hits) {
+		const items = d.brief.filter(b => b.project.includes(S.traceGoal) || b.tags.some(t => t.includes(S.traceGoal)));
+		h += `<h4 class="dim" style="margin:16px 0 6px">${esc(d.date)} · ${esc(d.host)}</h4><ul class="plain">`;
+		h += (items.length ? items : d.brief.slice(0,1)).map(b =>
+			`<li><span class="tag k-${KINDS.includes(b.kind)?b.kind:'其他'}">${esc(b.kind)}</span> ${inline(b.text)}</li>`).join('');
+		h += '</ul>';
+	}
+	view(h);
+	document.getElementById('traceSel').addEventListener('change', e => { S.traceGoal = e.target.value; vTrace(); });
+}
+
+/* ─── 分頁：週報 ─────────────────────────────────────────────── */
+function vWeekly() {
+	if (!S.weeklies.length) return view('<p class="dim">還沒有週報 —— aggregator 上跑 <code>journal digest</code> 生成。</p>');
+	let h = '';
+	for (const w of S.weeklies) {
+		const body = (w.raw || '').replace(/^\s*---[\s\S]*?---\n/, '');
+		h += `<h2 class="sec">${esc(w.name)}</h2><div class="card">` +
+			body.split('\n').map(l => {
+				if (/^##\s/.test(l)) return `<h4 style="margin:10px 0 4px">${esc(l.replace(/^##\s*/,''))}</h4>`;
+				if (/^-\s/.test(l)) return `<div>· ${inline(l.slice(2))}</div>`;
+				return l.trim() ? `<div>${inline(l)}</div>` : '';
+			}).join('') + '</div>';
+	}
+	view(h);
+}
+
+/* ─── 分頁：旋鈕（寫入！）────────────────────────────────────── */
+const KNOBS = [
+	{ key:'standup_lines',  type:'range', min:1, max:10, label:'早會力度',
+	  desc:'站立會議短句最多幾行。改完下一次 rollup 生效；舊日子重跑 rollup 套用。' },
+	{ key:'model_rollup',   type:'text', label:'L2 夜間模型', placeholder:'（該機預設）',
+	  desc:'一天一次、整併全天素材 —— 品質優先。別名（opus/sonnet/haiku）或完整型號。' },
+	{ key:'model_capture',  type:'text', label:'L1 即時模型', placeholder:'（該機預設）',
+	  desc:'每關一個 session 跑一次 —— 便宜模型很合理（如 haiku）。' },
+	{ key:'model_check',    type:'text', label:'SLI judge 模型', placeholder:'（該機預設）',
+	  desc:'只有 judge 型 SLI 會用到。' },
+	{ key:'rollup_time',    type:'time', label:'夜間整併時間',
+	  desc:'挑「通常還開著機」的時段。改了要在各機重跑 journal init 讓 timer 重寫。' },
+	{ key:'aggregate_time', type:'time', label:'聚合時間',
+	  desc:'aggregator 合成 progress 的時間，排在 rollup 之後。改了 aggregator 重跑 init。' },
+	{ key:'stale_days',     type:'number', min:1, max:30, label:'機器沉默門檻（天）',
+	  desc:'超過幾天沒回報算 ⚫ 沉默。' },
+	{ key:'goal_stale_days',type:'number', min:1, max:60, label:'目標停滯門檻（天）',
+	  desc:'目標幾天沒出現在 daily 算 🕳 沒動。' },
+];
+function vKnobs() {
+	let h = `<h2 class="sec">旋鈕 <span class="dim">改完按儲存 = 直接 commit 到 config.yml，各機下一輪 pull 生效</span></h2><div class="card">`;
+	for (const k of KNOBS) {
+		const v = yGet(S.config.raw, k.key, '');
+		h += `<div class="knob"><span class="kname">${k.key}</span><span>`;
+		if (k.type === 'range')
+			h += `<input type="range" min="${k.min}" max="${k.max}" value="${esc(v||'3')}" data-knob="${k.key}"
+				oninput="this.nextElementSibling.textContent=this.value">
+				<b style="margin-left:8px">${esc(v||'3')}</b>`;
+		else if (k.type === 'time')
+			h += `<input type="time" value="${esc(v)}" data-knob="${k.key}">`;
+		else if (k.type === 'number')
+			h += `<input type="number" min="${k.min}" max="${k.max}" value="${esc(v)}" data-knob="${k.key}" style="width:90px">`;
+		else
+			h += `<input type="text" value="${esc(v)}" placeholder="${esc(k.placeholder||'')}" data-knob="${k.key}" list="models" style="width:230px">`;
+		h += `</span><span class="kdesc">${esc(k.label)} —— ${esc(k.desc)}</span></div>`;
+	}
+	h += `</div>
+	<datalist id="models"><option value="haiku"><option value="sonnet"><option value="opus"><option value="fable"></datalist>
+	<div class="savebar">
+		<button class="primary" id="btnSave">儲存（commit）</button>
+		<span class="dim" id="saveHint"></span>
+	</div>`;
+	view(h);
+	document.getElementById('btnSave').addEventListener('click', saveKnobs);
+}
+async function saveKnobs() {
+	const btn = document.getElementById('btnSave');
+	const changes = {};
+	$view.querySelectorAll('[data-knob]').forEach(el => {
+		const cur = yGet(S.config.raw, el.dataset.knob, '');
+		if (String(el.value) !== String(cur)) changes[el.dataset.knob] = el.value;
+	});
+	if (!Object.keys(changes).length) return toast('沒有變更');
+	btn.disabled = true;
+	try {
+		let raw = S.config.raw;
+		for (const [k, v] of Object.entries(changes)) raw = ySet(raw, k, v);
+		const res = await gh('contents/config.yml', { method:'PUT', body:{
+			message:`web: 調整 ${Object.keys(changes).join(', ')}`,
+			content: b64utf8(raw), sha: S.config.sha, branch: S.branch } });
+		S.config = { raw, sha: res.content.sha };
+		toast(`已 commit ${res.commit.sha.slice(0,7)} —— 各機下一輪 pull 生效`);
+		document.getElementById('saveHint').textContent =
+			Object.keys(changes).some(k => k.endsWith('_time'))
+				? '注意：改了時間類旋鈕，要在對應機器重跑 journal init 讓 timer 重寫'
+				: '';
+	} catch (e) { handleErr(e); }
+	btn.disabled = false;
+}
+
+/* ─── 分頁：連線設定 ─────────────────────────────────────────── */
+function vSetup() {
+	view(`<div class="setup card">
+	<h2 class="sec" style="margin-top:4px">連線 GitHub</h2>
+	<ol>
+		<li>到 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">建 fine-grained PAT</a></li>
+		<li>Repository access → <b>Only select repositories</b> → 只勾 <code>journal-data</code></li>
+		<li>Permissions → <b>Contents: Read and write</b>（其餘都不用）</li>
+		<li>貼進來。PAT 只存這個瀏覽器的 localStorage，不會被送到 GitHub 以外的任何地方。</li>
+	</ol>
+	<label>Owner / Repo / Branch</label>
+	<div style="display:flex;gap:8px">
+		<input id="inOwner" value="${esc(S.owner)}" style="flex:1">
+		<input id="inRepo" value="${esc(S.repo)}" style="flex:1">
+		<input id="inBranch" value="${esc(S.branch)}" style="width:90px">
+	</div>
+	<label>Fine-grained PAT</label>
+	<input id="inPat" type="password" value="${esc(S.pat)}" placeholder="github_pat_…">
+	<div class="savebar">
+		<button class="primary" id="btnConnect">連線並載入</button>
+		<button class="ghost" id="btnForget">清除本機 PAT</button>
+	</div></div>`);
+	document.getElementById('btnConnect').addEventListener('click', async () => {
+		S.owner = document.getElementById('inOwner').value.trim();
+		S.repo = document.getElementById('inRepo').value.trim();
+		S.branch = document.getElementById('inBranch').value.trim() || 'main';
+		S.pat = document.getElementById('inPat').value.trim();
+		localStorage.setItem(LS.owner, S.owner); localStorage.setItem(LS.repo, S.repo);
+		localStorage.setItem(LS.branch, S.branch); localStorage.setItem(LS.pat, S.pat);
+		try { await loadAll(); S.tab = 'overview'; renderTabs(); render(); toast('連上了'); }
+		catch (e) { handleErr(e); }
+	});
+	document.getElementById('btnForget').addEventListener('click', () => {
+		localStorage.removeItem(LS.pat); S.pat = ''; toast('已清除'); vSetup();
+	});
+}
+
+/* ─── 路由 ───────────────────────────────────────────────────── */
+function render() {
+	({ overview:vOverview, daily:vDaily, trace:vTrace,
+	   weekly:vWeekly, knobs:vKnobs, setup:vSetup })[S.tab]();
+}
+renderTabs();
+(async () => {
+	if (!S.pat) { S.tab = 'setup'; renderTabs(); return render(); }
+	try { await loadAll(); render(); }
+	catch (e) { handleErr(e); }
+})();
+</script>
+</body>
+</html>
