@@ -147,6 +147,7 @@ jr_selfcheck() {
 		return 0
 	}
 	export GIT_TERMINAL_PROMPT=0
+	jr_ensure_known_host "$(jr_remote_ssh_host "$(git -C "$JR_DATA_DIR" remote get-url origin 2>/dev/null)")"
 	_gitssh=$JR_GIT_SSH
 
 	jr_log '端到端自檢：測試 capture → gate → commit → push → 驗證 → 還原'

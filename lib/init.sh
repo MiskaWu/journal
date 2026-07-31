@@ -307,6 +307,7 @@ jr_cmd_init() {
 	if [ "$_local" -ne 1 ] && [ -n "$_remote" ] && [ ! -d "$_data_dir/.git" ]; then
 		JR_HOST=$_host_id
 		if jr_gen_deploy_key; then jr_ssh_alias; fi
+		jr_ensure_known_host "$(jr_remote_ssh_host "$_remote")"
 		jr_info "clone 資料 repo：$_remote → $_data_dir"
 		if ! GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15' 			git clone -q "$_remote" "$_data_dir" 2> "$JR_TMPDIR/clone.err"; then
 			jr_err "clone 失敗：$(sed -n 1p "$JR_TMPDIR/clone.err")"
