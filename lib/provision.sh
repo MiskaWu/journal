@@ -147,7 +147,7 @@ jr_selfcheck() {
 		return 0
 	}
 	export GIT_TERMINAL_PROMPT=0
-	_gitssh='ssh -o BatchMode=yes -o ConnectTimeout=10'
+	_gitssh=$JR_GIT_SSH
 
 	jr_log '端到端自檢：測試 capture → gate → commit → push → 驗證 → 還原'
 	_f="$JR_DATA_DIR/status/.selfcheck-$JR_HOST"

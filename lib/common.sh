@@ -6,6 +6,11 @@
 # ---------------------------------------------------------------- 全域
 
 JR_VERSION='0.1.0'
+# journal 所有背景 git 操作共用的 ssh 選項：
+#   BatchMode        —— 背景路徑絕不互動（D17）
+#   accept-new       —— 新機器第一次連 provider 不會卡在 host key 確認；
+#                       金鑰「改變」仍然會擋（防的是中途換人，不是首次信任）
+JR_GIT_SSH='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15'
 : "${JR_CONFIG_HOME:=${XDG_CONFIG_HOME:-$HOME/.config}/journal}"
 JR_HOST_YML="$JR_CONFIG_HOME/host.yml"
 
