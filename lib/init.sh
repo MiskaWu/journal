@@ -254,6 +254,11 @@ EOF
 		systemctl --user enable --now journal-aggregate.timer > /dev/null 2>&1 \
 			&& jr_ok "aggregate timer 已啟用：每日 ${_agg:-22:15}" \
 			|| jr_warn 'aggregate timer enable 失敗'
+	elif systemctl --user is-enabled journal-aggregate.timer > /dev/null 2>&1; then
+		systemctl --user disable --now journal-aggregate.timer > /dev/null 2>&1
+		rm -f "$_unitdir/journal-aggregate.service" "$_unitdir/journal-aggregate.timer"
+		systemctl --user daemon-reload
+		jr_ok '此機不再是 aggregator，aggregate timer 已移除'
 	fi
 }
 
@@ -262,7 +267,7 @@ jr_cmd_init() {
 	_host_id=''
 	_data_dir=''
 	_remote=''
-	_role='node'
+	_role=''
 	_force=0
 	while [ $# -gt 0 ]; do
 		case $1 in
@@ -277,7 +282,7 @@ jr_cmd_init() {
 		shift
 	done
 	case $_role in
-		node|aggregator) ;;
+		''|node|aggregator) ;;
 		*) jr_die "role 只能是 node 或 aggregator，收到：$_role" ;;
 	esac
 
@@ -296,7 +301,19 @@ jr_cmd_init() {
 	[ -n "$_data_dir" ] || _data_dir=$(jr_yaml_get "$JR_HOST_YML" data_dir "$HOME/journal")
 	case $_data_dir in "~/"*) _data_dir="$HOME/${_data_dir#\~/}" ;; esac
 
-	# 3) 資料 repo 骨架
+	# 3) 資料 repo：clone（多機）或 seed（第一台／離線）
+	#    有 --data-remote 且本地還不是 repo → 一定走 clone —— seed 會生出
+	#    與遠端不相干的歷史，之後永遠推不上去
+	if [ "$_local" -ne 1 ] && [ -n "$_remote" ] && [ ! -d "$_data_dir/.git" ]; then
+		JR_HOST=$_host_id
+		if jr_gen_deploy_key; then jr_ssh_alias; fi
+		jr_info "clone 資料 repo：$_remote → $_data_dir"
+		if ! GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15' 			git clone -q "$_remote" "$_data_dir" 2> "$JR_TMPDIR/clone.err"; then
+			jr_err "clone 失敗：$(sed -n 1p "$JR_TMPDIR/clone.err")"
+			jr_info '公鑰貼上 provider 了嗎？（上面已印出公鑰與網址）貼好後重跑同一個指令。'
+			return 1
+		fi
+	fi
 	mkdir -p "$_data_dir"
 	_data_dir=$( CDPATH='' cd -P "$_data_dir" && pwd )
 	if [ "$_data_dir" = "$JR_ROOT" ]; then
@@ -310,7 +327,7 @@ jr_cmd_init() {
 	# 寫在 heredoc 裡讀的會是剛被截斷的空檔，重跑一次 created_at 就重置一次
 	mkdir -p "$JR_CONFIG_HOME"
 	_created=$(jr_yaml_get "$JR_HOST_YML" created_at "$(jr_now_iso)")
-	[ "$_role" = 'node' ] && _role=$(jr_yaml_get "$JR_HOST_YML" role node)
+	[ -z "$_role" ] && _role=$(jr_yaml_get "$JR_HOST_YML" role node)
 	jr_backup "$JR_HOST_YML"
 	cat > "$JR_HOST_YML" <<EOF
 # journal 本機身分 —— 不入庫
