@@ -236,7 +236,7 @@ L1 送出去的是**已蒸餾、已過機密 gate** 的 markdown,不是原始 tr
 1. **環境自檢與互動補齊** —— 跑 `journal doctor`,逐項帶你補完再往下(見下)。
 2. **決定 host id** —— 預設 `hostname`,可 `--host-id` 覆寫,寫進 `~/.config/journal/host.yml`。**解耦的理由(D14)**:hostname 會變,一變 daily 檔就分岔成另一條線,而且**不會有任何錯誤訊息**。
 3. **取得程式碼 repo** —— clone 到 `~/.local/share/journal/`。公開的話直接 https clone(O8);私有則需唯讀 deploy key。
-4. **產生 per-host deploy key** —— `ssh-keygen -t ed25519 -f ~/.ssh/journal_<host> -N "" -C "journal@<host>"`,並寫 `~/.ssh/config` 的 Host alias(`journal.github.com` → `github.com`),讓 journal 專用這把、**完全不碰你的個人金鑰**。
+4. **產生 per-host deploy key** —— `ssh-keygen -t ed25519 -f ~/.ssh/journal_<host> -N "" -C "journal@<host>"`,並設 Host alias(`journal.github.com` → `github.com`),讓 journal 專用這把、**完全不碰你的個人金鑰**。<br>**落點優先 `~/.ssh/config.d/journal.github.com.conf`(O10)** —— 主檔常有別人在寫,journal 只擁有自己那一個檔。前提是主檔**檔首**有 `Include config.d/*.conf`:那行落進 `Host` 區塊裡會變成條件式包含、形同沒寫,所以只能插檔首,而且 `Include` 是 OpenSSH 7.3+ 才有的關鍵字,老版本讀到是 rc=255 全滅不是降級。因此**代改主檔一律先問過**(非互動路徑一律不動),並且不比對 `ssh -V` 而是用 `ssh -G` **功能探測**:寫完就驗,驗不過原樣還原、退回把 alias 附加到 `~/.ssh/config` 檔尾(舊做法,功能等價)。既有安裝在互動下會被問要不要搬進 drop-in;`uninstall --purge` 兩種落點都收得乾淨。
 5. **連接 provider** —— 偵測到 `gh`/`glab` 已登入就自動建 repo 並上傳公鑰為 **write deploy key**;否則印出公鑰 + 直達設定頁的網址請你貼上。**兩條路產出相同**。dev 機實測 `gh` 未安裝 → 走手動路徑。
 6. **取得資料 repo** —— 不存在就建立 + 骨架 + 首個 commit;已存在就 clone 到 `~/journal`。
 7. **註冊本機** —— 寫 `hosts/<host>.yml`(per-host,不撞)。這就是**主機註冊表**,讓中心知道「誰應該回報」。

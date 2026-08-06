@@ -549,9 +549,63 @@ a_rc '完整 init 重跑冪等' $? 0
 
 # deploy key（假 HOME 裡）
 [ -f "$T/home/.ssh/journal_testhost" ] && ok 'deploy key 已產生' || bad 'deploy key 已產生' '缺'
+# 這個假 HOME 的主檔沒有 Include，非互動下不代改別人的檔 → 走降級：寫主檔
 a_grep 'ssh alias 已寫入' "$T/home/.ssh/config" 'Host journal.github.com'
 _alias_n=$(grep -cF 'Host journal.github.com' "$T/home/.ssh/config")
 a_eq 'ssh alias 不重複' "$_alias_n" '1'
+a_eq 'ssh alias 降級時不留空的 config.d' "$([ -d "$T/home/.ssh/config.d" ] && echo yes || echo no)" 'no'
+
+# --- ssh alias drop-in ------------------------------------------------
+# Include 的路徑一律寫絕對 —— ssh 解相對路徑是對「真實」家目錄（getpwuid，
+# 不認 $HOME），假 HOME 會被穿透，寫相對的話測到的是開發者自己的 config.d。
+. "$ROOT/lib/provision.sh"
+
+_ssh_probe() { ssh -F "$1/.ssh/config" -G journal.github.com 2>/dev/null | grep -qx 'hostname github.com'; }
+_ssh_seed() {
+	mkdir -p "$1/.ssh/config.d"; chmod 700 "$1/.ssh" "$1/.ssh/config.d"
+	{ [ "$2" = 'include' ] && printf 'Include %s/.ssh/config.d/*.conf\n' "$1"
+	  printf 'Host keepme\n\tUser nobody\n'; } > "$1/.ssh/config"
+	chmod 600 "$1/.ssh/config"
+}
+
+printf '\n== 1c · ssh alias drop-in ==\n'
+
+# 情境一：主檔已有 Include → alias 落在 drop-in，主檔一行都不多
+_d="$T/ssh-fresh"; _ssh_seed "$_d" include
+( HOME="$_d"; JR_HOST=testhost; JOURNAL_NONINTERACTIVE=1; jr_ssh_alias ) > "$T/ssh-fresh.log" 2>&1
+a_grep 'drop-in：alias 進了自己的檔' "$_d/.ssh/config.d/journal.github.com.conf" 'Host journal.github.com'
+a_grep '  HostName 有帶著走' "$_d/.ssh/config.d/journal.github.com.conf" 'HostName github.com'
+a_ngrep '  主檔沒被寫進東西' "$_d/.ssh/config" 'Host journal.github.com'
+a_grep '  主檔原有內容原封不動' "$_d/.ssh/config" 'Host keepme'
+if _ssh_probe "$_d"; then ok '  ssh 真的解析得到（非只是檔案存在）'; else bad '  ssh 真的解析得到' 'ssh -G 沒吐 hostname github.com'; fi
+( HOME="$_d"; JR_HOST=testhost; JOURNAL_NONINTERACTIVE=1; jr_ssh_alias ) >> "$T/ssh-fresh.log" 2>&1
+a_eq '  重跑冪等（不重複寫）' "$(grep -cF 'Host journal.github.com' "$_d/.ssh/config.d/journal.github.com.conf")" '1'
+
+# 情境二：沒有 Include + 非互動 → 不碰主檔結構，降級寫主檔尾、不留空 config.d
+_d="$T/ssh-noinc"; _ssh_seed "$_d" plain; rmdir "$_d/.ssh/config.d"
+( HOME="$_d"; JR_HOST=testhost; JOURNAL_NONINTERACTIVE=1; jr_ssh_alias ) > "$T/ssh-noinc.log" 2>&1
+a_grep '無 Include：降級寫主檔' "$_d/.ssh/config" 'Host journal.github.com'
+a_ngrep '  沒偷加 Include' "$_d/.ssh/config" 'Include config.d'
+a_eq '  沒留下空的 config.d' "$([ -d "$_d/.ssh/config.d" ] && echo yes || echo no)" 'no'
+
+# 情境三：既有安裝搬家 —— 舊段落移除、其餘 byte 不動
+_d="$T/ssh-mig"; _ssh_seed "$_d" include
+( HOME="$_d"; JR_HOST=testhost; JOURNAL_NONINTERACTIVE=1
+  { printf '\n'; jr_ssh_alias_block; } >> "$_d/.ssh/config" ) 2>/dev/null
+cp "$_d/.ssh/config" "$T/ssh-mig.before"
+( HOME="$_d"; JR_HOST=testhost; JOURNAL_NONINTERACTIVE=1; jr_ssh_migrate ) > "$T/ssh-mig.log" 2>&1
+a_grep '搬家：alias 進了 drop-in' "$_d/.ssh/config.d/journal.github.com.conf" 'Host journal.github.com'
+a_ngrep '  主檔的舊段落已移除' "$_d/.ssh/config" 'Host journal.github.com'
+a_ngrep '  連註解行都收乾淨' "$_d/.ssh/config" 'journal deploy key'
+a_grep '  別人的設定沒被誤傷' "$_d/.ssh/config" 'Host keepme'
+if _ssh_probe "$_d"; then ok '  搬完 ssh 仍解析得到'; else bad '  搬完 ssh 仍解析得到' 'ssh -G 沒吐 hostname github.com'; fi
+# 移除的必須「剛好」是 journal 那幾行：把搬走的段落補回去就該與搬家前一致
+{ printf '\n'; ( HOME="$_d"; JR_HOST=testhost; jr_ssh_alias_block ); } >> "$_d/.ssh/config"
+if diff -q "$T/ssh-mig.before" "$_d/.ssh/config" > /dev/null 2>&1; then
+	ok '  移除範圍精準（補回去 byte 級還原）'
+else
+	bad '  移除範圍精準' "$(diff "$T/ssh-mig.before" "$_d/.ssh/config" | head -5)"
+fi
 
 # 角色：已有 aggregator 就拒絕，--force-takeover 放行
 cat > "$T/data/hosts/otherhost.yml" <<'EOF'

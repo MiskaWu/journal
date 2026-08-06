@@ -23,19 +23,34 @@ jr_gen_deploy_key() {
 		|| { jr_err 'ssh-keygen 失敗'; return 1; }
 }
 
-# ~/.ssh/config 加 journal 專用 Host alias —— push 走 journal.github.com
-# 就一定用這把 key，完全不碰個人金鑰（DESIGN §8 步驟 4）
-jr_ssh_alias() {
-	_cfg="$HOME/.ssh/config"
-	_marker="Host journal.github.com"
-	if [ -f "$_cfg" ] && grep -qF "$_marker" "$_cfg"; then
-		jr_ok 'ssh alias 已就位（journal.github.com）'
-		return 0
-	fi
-	jr_backup "$_cfg"
-	mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
-	cat >> "$_cfg" <<EOF
+# ------------------------------------------------------------- ssh alias
+#
+# journal 專用 Host alias —— push 走 journal.github.com 就一定用這把 key，
+# 完全不碰個人金鑰（DESIGN §8 步驟 4）。
+#
+# 落點優先 drop-in（`~/.ssh/config.d/journal.github.com.conf`），主檔一行
+# 都不佔：`~/.ssh/config` 常常有別人在寫（wsl-bootstrap 的 managed 區塊、
+# dev-env-ansible 的 `make ssh-host`…），三方各自拿 grep/sed 切同一個檔正是
+# 要避開的形狀。journal 只擁有自己那一個檔，移除也才做得起來。
+#
+# 前提是主檔檔首要有 `Include config.d/*.conf`。這行有兩個坑，都實測過：
+#   · 位置必須在第一個 Host 區塊「之前」。落進 Host 區塊裡會變成條件式
+#     包含，只有該 host 匹配時才處理 —— 看起來像沒寫。所以只能插檔首，
+#     不能 append。
+#   · `Include` 是 OpenSSH 7.3+ 才有的關鍵字。老版本讀到直接
+#     `terminating, bad configuration options`、rc=255 —— 不是降級，是那個
+#     使用者所有的 ssh 都掛掉。代改別人的檔又有這種爆炸半徑，所以要問過。
+#
+# 不比對 `ssh -V`（`10.2` vs `7.3` 拿字串比大小還會反過來），改用功能探測：
+# 寫完就跑 `ssh -G` 看解析得到不，不通過就原樣還原、退回寫主檔。`ssh -G`
+# 是 6.8+、`Include` 是 7.3+，凡是支援 Include 的必定支援 -G，探測不會誤殺
+# （D10：有就用、沒有就降級）。
 
+jr_ssh_dropin_path() { printf '%s/.ssh/config.d/journal.github.com.conf' "$HOME"; }
+
+# alias 內容本體 —— drop-in 與主檔兩條路共用，一字不差
+jr_ssh_alias_block() {
+	cat <<EOF
 # journal deploy key —— journal init 產生，journal uninstall --purge 移除
 Host journal.github.com
 	HostName github.com
@@ -43,6 +58,158 @@ Host journal.github.com
 	IdentityFile $(jr_deploy_key_path)
 	IdentitiesOnly yes
 EOF
+}
+
+# ssh 真的解析得到 alias 嗎。注意 ssh 讀「預設」config 走的是 getpwuid、
+# 不認 $HOME —— 測試的假 HOME 要驗到正確的檔，就一定得明寫 -F。
+jr_ssh_alias_works() {
+	ssh -F "$HOME/.ssh/config" -G journal.github.com 2>/dev/null \
+		| grep -qx 'hostname github.com'
+}
+
+# 把主檔裡 journal 自己那一段整塊拿掉，結果輸出到 stdout。
+# 邊界不靠猜空行 —— 照 ssh_config 文法，一個 Host 區塊終止於下一個頂層
+# 指令（Host / Match / Include），這是解析規則不是啟發式。順手把因此變成
+# 結尾的空行收掉，中間的空行原樣保留。
+jr_ssh_strip_legacy() {
+	awk '
+		/^[[:space:]]*#.*journal deploy key/ { skip = 1; next }
+		/^[[:space:]]*[Hh]ost[[:space:]]+journal\.github\.com([[:space:]]|$)/ { skip = 1; next }
+		skip && /^[[:space:]]*([Hh]ost|[Mm]atch|[Ii]nclude)[[:space:]]/ { skip = 0 }
+		skip { next }
+		/^[[:space:]]*$/ { hold = hold $0 "\n"; next }
+		{ printf "%s", hold; hold = ""; print }
+	' "$1"
+}
+
+# 代改主檔前一定問過。改動只有一行，但那是別人的檔。
+jr_ssh_ask_include() {
+	_cfg="$HOME/.ssh/config"
+	jr_info ''
+	jr_info "journal 想把自己的 ssh 設定放進獨立的檔，不跟 $_cfg 混在一起："
+	jr_info "  · 新增 $(jr_ssh_dropin_path)"
+	jr_info '    這個檔完全由 journal 擁有，uninstall --purge 會整個刪掉。'
+	jr_info ''
+	jr_info "  要讓 ssh 讀得到它，$_cfg 的「檔首」需要有這一行，而現在沒有："
+	jr_info '      Include config.d/*.conf'
+	jr_info '  · 加的就只有這一行，你原本的內容一行都不動、順序也不變。'
+	jr_info "  · 先備份成 $_cfg.bak.<時間>，加完立刻驗證，驗不過自動還原。"
+	jr_info ''
+	jr_info '  選 n 完全沒問題 —— journal 改用舊做法，把 6 行 alias 直接附加到'
+	jr_info "  $_cfg 檔尾。功能一模一樣，只是混在同一個檔裡。"
+	printf '要幫你加 Include 這一行嗎？[Y/n] ' >&2
+	read -r _ans < /dev/tty 2>/dev/null || _ans=Y
+	case $_ans in n|N) jr_log '好，不動主檔結構。'; return 1 ;; esac
+	return 0
+}
+
+# 讓 alias 落在 drop-in 並確認 ssh 真的吃得到。
+# 0 = 成功；1 = 這台走不通（ssh 太舊／使用者不同意），呼叫端退回寫主檔。
+jr_ssh_try_dropin() {
+	_cfg="$HOME/.ssh/config"
+	_dropin=$(jr_ssh_dropin_path)
+	_made_dir=0
+	[ -d "$HOME/.ssh/config.d" ] || _made_dir=1
+	mkdir -p "$HOME/.ssh/config.d"; chmod 700 "$HOME/.ssh/config.d"
+	jr_ssh_alias_block > "$_dropin"; chmod 600 "$_dropin"
+	jr_ssh_alias_works && return 0
+
+	# 寫了但 ssh 沒讀到 —— 主檔缺 Include，或既有的 Include 涵蓋不到這個檔
+	if ! jr_interactive; then
+		jr_log "主檔缺 Include config.d/*.conf，非互動下不動主檔 —— 改寫 $_cfg"
+	elif jr_ssh_ask_include; then
+		jr_backup "$_cfg"
+		_had=0
+		[ -f "$_cfg" ] && { _had=1; cp -p "$_cfg" "$_cfg.jr.inc"; }
+		{
+			printf 'Include config.d/*.conf\n'
+			[ "$_had" -eq 1 ] && cat "$_cfg.jr.inc"
+		} > "$_cfg"
+		chmod 600 "$_cfg"
+		if jr_ssh_alias_works; then
+			rm -f "$_cfg.jr.inc"
+			jr_ok "已在 $_cfg 檔首加入 Include config.d/*.conf"
+			return 0
+		fi
+		# 加了還是不通 → 這台的 ssh 不認得 Include。原樣還原，當作沒發生過。
+		if [ "$_had" -eq 1 ]; then
+			mv "$_cfg.jr.inc" "$_cfg"; chmod 600 "$_cfg"
+		else
+			rm -f "$_cfg"
+		fi
+		jr_warn "這台的 ssh 不支援 Include（OpenSSH < 7.3）—— 已還原 $_cfg"
+	fi
+
+	rm -f "$_dropin"
+	[ "$_made_dir" -eq 1 ] && rmdir "$HOME/.ssh/config.d" 2>/dev/null
+	return 1
+}
+
+jr_ssh_ask_migrate() {
+	_cfg="$HOME/.ssh/config"
+	jr_info ''
+	jr_info "偵測到 journal 的 alias 寫在 $_cfg 裡（舊做法，混在你的設定中）。"
+	jr_info "可以把它搬進 journal 自己的檔：$(jr_ssh_dropin_path)"
+	jr_info "  · $_cfg 裡 journal 那 6 行會被移除，其餘內容一行都不動。"
+	jr_info '  · 先備份，搬完立刻驗證，驗不過自動還原。'
+	printf '要現在搬過去嗎？[Y/n] ' >&2
+	read -r _ans < /dev/tty 2>/dev/null || _ans=Y
+	case $_ans in n|N) return 1 ;; esac
+	return 0
+}
+
+# 既有安裝搬家。**先移除舊段落再探測** —— 順序反過來的話，探測會被主檔
+# 那份舊 alias 餵成偽陽性，看不出 drop-in 其實沒生效。
+jr_ssh_migrate() {
+	_cfg="$HOME/.ssh/config"
+	_dropin=$(jr_ssh_dropin_path)
+	jr_backup "$_cfg"
+	cp -p "$_cfg" "$_cfg.jr.orig" || return 1
+	jr_ssh_strip_legacy "$_cfg.jr.orig" > "$_cfg"
+	chmod 600 "$_cfg"
+	if jr_ssh_try_dropin; then
+		rm -f "$_cfg.jr.orig"
+		jr_ok "ssh alias 已搬進 $_dropin —— $_cfg 的舊段落已移除"
+		return 0
+	fi
+	mv "$_cfg.jr.orig" "$_cfg"; chmod 600 "$_cfg"
+	jr_warn "搬不過去，維持原狀 —— alias 仍在 $_cfg，功能不受影響"
+	return 1
+}
+
+jr_ssh_alias() {
+	_cfg="$HOME/.ssh/config"
+	_dropin=$(jr_ssh_dropin_path)
+	_marker='Host journal.github.com'
+	_in_main=0; _in_drop=0
+	[ -f "$_cfg" ] && grep -qF "$_marker" "$_cfg" && _in_main=1
+	[ -f "$_dropin" ] && grep -qF "$_marker" "$_dropin" && _in_drop=1
+
+	mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+
+	# 已經在 drop-in、主檔也沒殘留 —— 收工
+	if [ "$_in_drop" -eq 1 ] && [ "$_in_main" -eq 0 ]; then
+		jr_ok 'ssh alias 已就位（journal.github.com，drop-in）'
+		return 0
+	fi
+
+	# 主檔裡有 —— 舊安裝或搬移殘留。功能本來就是好的，所以只在互動下提議搬家，
+	# 背景路徑（timer / hook）一律不動使用者的檔。
+	if [ "$_in_main" -eq 1 ]; then
+		if jr_interactive && jr_ssh_ask_migrate; then
+			jr_ssh_migrate && return 0
+		fi
+		jr_ok "ssh alias 已就位（journal.github.com，$_cfg）"
+		return 0
+	fi
+
+	# 兩處都沒有 —— 全新寫入，drop-in 優先
+	if jr_ssh_try_dropin; then
+		jr_ok "ssh alias 寫入 $_dropin（journal.github.com → github.com，專用這把 key）"
+		return 0
+	fi
+	jr_backup "$_cfg"
+	{ printf '\n'; jr_ssh_alias_block; } >> "$_cfg"
 	chmod 600 "$_cfg"
 	jr_ok "ssh alias 寫入 $_cfg（journal.github.com → github.com，專用這把 key）"
 }
@@ -297,7 +464,23 @@ PY
 	rm -f "$(jr_deploy_key_path)" "$(jr_deploy_key_path).pub"
 	rm -rf "$JR_CONFIG_HOME"
 	rm -rf "$JR_DATA_DIR"
-	jr_ok 'purge 完成（程式碼 repo 與 ~/.ssh/config 的 alias 段留給你自己收）'
+
+	# alias 兩種落點都收乾淨 —— 檔案裡的註解一直寫著「--purge 移除」，
+	# 在改成 drop-in 之前那句是空頭支票（要拿 sed 去切別人的檔）。現在
+	# drop-in 是刪一個檔，主檔殘留也有結構式移除可用，話終於兌現得了。
+	rm -f "$(jr_ssh_dropin_path)"
+	rmdir "$HOME/.ssh/config.d" 2>/dev/null
+	_cfg="$HOME/.ssh/config"
+	if [ -f "$_cfg" ] && grep -qF 'Host journal.github.com' "$_cfg"; then
+		jr_backup "$_cfg"
+		cp -p "$_cfg" "$_cfg.jr.orig" \
+			&& jr_ssh_strip_legacy "$_cfg.jr.orig" > "$_cfg" \
+			&& rm -f "$_cfg.jr.orig"
+		chmod 600 "$_cfg"
+	fi
+	# 那行 Include 不動 —— 它不屬於 journal，別人可能也在用，
+	# 而且 glob 匹配不到檔案並不會讓 ssh 報錯。
+	jr_ok 'purge 完成（ssh alias 已移除；程式碼 repo 留給你自己收）'
 	jr_info "提醒：provider 上的 deploy key（journal@$JR_HOST）也要撤"
 }
 
