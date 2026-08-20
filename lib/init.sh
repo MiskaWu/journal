@@ -14,11 +14,20 @@ jr_backup() {
 
 jr_seed_data_repo() {
 	_dir=$1
-	mkdir -p "$_dir/daily" "$_dir/status" "$_dir/hosts" "$_dir/weekly" "$_dir/web"
+	mkdir -p "$_dir/daily" "$_dir/status" "$_dir/hosts" "$_dir/weekly" "$_dir/web" \
+		"$_dir/tasks/archive"
 
-	for d in daily status hosts weekly web; do
+	for d in daily status hosts weekly web tasks tasks/archive; do
 		[ -f "$_dir/$d/.gitkeep" ] || : > "$_dir/$d/.gitkeep"
 	done
+
+	if [ ! -f "$_dir/now.md" ]; then
+		cat > "$_dir/now.md" <<'EOF'
+# now —— 僅人可寫；代理唯讀（docs/TASKS.md）
+# 一行一個任務編號，由上而下就是順序，最多三行。
+# 要放新的進去，先擠掉一件 —— 上限本身就是機制。
+EOF
+	fi
 
 	if [ ! -f "$_dir/.gitignore" ]; then
 		cat > "$_dir/.gitignore" <<'EOF'
@@ -76,6 +85,8 @@ EOF
 - `status/<host>.yml` —— SLI 結果與 agent 健康度
 - `hosts/<host>.yml` —— 主機註冊表
 - `progress.md` —— ★ 僅 aggregator 可寫
+- `tasks/<id>.md` —— 任務，一件一檔；`tasks/archive/` 是封存
+- `now.md` —— ★ 僅人可寫：現在要做的最多三件，行序即優先度
 
 工具本體在另一個 repo（`journal`）。
 EOF

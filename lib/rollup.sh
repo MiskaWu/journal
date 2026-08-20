@@ -78,7 +78,7 @@ jr_git_commit_data() {
 	# GOALS.md / config.yml / checklists 是人編的，但它們住在資料 repo 裡：
 	# 不 commit 的話 pull --rebase 永遠被工作區擋住，中心旋鈕的傳播就斷了。
 	set --
-	for _p in daily hosts status weekly progress.md web GOALS.md config.yml checklists; do
+	for _p in daily hosts status weekly progress.md web GOALS.md config.yml checklists tasks now.md; do
 		[ -e "$JR_DATA_DIR/$_p" ] && set -- "$@" "$_p"
 	done
 	[ $# -gt 0 ] && git -C "$JR_DATA_DIR" add -A -- "$@" 2>/dev/null

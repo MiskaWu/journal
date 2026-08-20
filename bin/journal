@@ -29,7 +29,7 @@ _bootstrap() {
 }
 _bootstrap
 
-for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli aggregate render provision init doctor; do
+for _lib in common timeutil transcript gitlog secrets frontmatter distill rollup capture sli aggregate render provision init doctor task; do
 	# shellcheck source=/dev/null
 	. "$JR_ROOT/lib/$_lib.sh"
 done
@@ -73,6 +73,12 @@ journal $JR_VERSION —— 把散在各機各 session 的活動，收斂成能�
   brief [DATE]            只印回報層摘要（專案｜類型｜標籤｜一句話）
   check [--no-commit]     跑本機能跑的 SLI → 寫 status/<host>.yml。requires 不滿足
                           的目標標 na（不是 fail）。有 fail 時 exit 1
+  task <子指令>           任務機制（docs/TASKS.md）。資料在 journal-data 的 tasks/
+                          與 now.md（now.md 僅人可寫，行序即優先度，最多三行）
+      人用   new "標題" | ready <id> | done <id> | archive <id> | list
+      代理用 next（取一件並認領；exit 3=沒事做）| get <id> | heartbeat <id>
+             update <id> [--status doing|needs-input|review] [--comment "…"]
+             （done 只能由人跑；needs-input 必須帶 --comment）
   version                 版本
 
 環境變數
@@ -153,6 +159,7 @@ case $_cmd in
 	brief)         jr_cmd_brief "$@" ;;
 	capture)       jr_cmd_capture "$@" ;;
 	check)         jr_cmd_check "$@" ;;
+	task)          jr_cmd_task "$@" ;;
 	hosts)         jr_cmd_hosts "$@" ;;
 	uninstall)     jr_cmd_uninstall "$@" ;;
 	revoke)        jr_cmd_revoke "$@" ;;

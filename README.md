@@ -22,10 +22,14 @@ journal brief [DATE]            # 組長視角摘要（專案｜類型｜標籤�
 journal show [DATE]             # 全文：早會 + 摘要 + 四段細節
 journal rollup [DATE]           # 手動整併／補跑任意日期（冪等）
 journal doctor --check          # 環境自檢，以 exit code 表示
+journal task new "一句話"       # 任務機制（docs/TASKS.md）：心流中途丟想法進待辦
+journal task list               # 等你回應的浮最上面、太久沒動的標「老」
+journal task next               # 代理取件（回一件並認領；exit 3 = 沒事做）
 ```
 
 **控制台**：用瀏覽器開 `console/index.html`（零後端 —— 直連 GitHub API）。
-總攬燈號、daily 三層瀏覽、目標軌跡、週報，以及**旋鈕面板**：改 `standup_lines`／
+總攬燈號、**任務看板**（now 排序、回覆卡住的、審完按完成 —— 每顆按鈕一個 commit）、
+daily 三層瀏覽、目標軌跡、週報，以及**旋鈕面板**：改 `standup_lines`／
 蒸餾模型／排程時間，按儲存就是一個 commit，各機下一輪 pull 生效。首次使用貼一把
 fine-grained PAT（只授權 journal-data 的 Contents），存在瀏覽器本機。
 
