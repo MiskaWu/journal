@@ -81,21 +81,3 @@ stale_days: 3
 
 # 目標幾天沒在 daily 的 goals_touched 出現算沒動（🕳 goal staleness alert）
 goal_stale_days: 7
-
-# ---------------------------------------------------------------- 任務（docs/TASKS.md）
-# now.md 三件全卡住（或 now 是空的）時，代理取件的行為：
-#   idle    = 閒置等人清積壓（預設 —— 審查容量只有一個人，用閒置逼積壓浮上來）
-#   backlog = 去待辦池撈 ready 的繼續產出（吞吐優先，審查佇列會繼續長）
-task_stalled: idle
-
-# 待審（review）達到這個數，代理停止認領新任務 —— 系統吞吐量等於人的審查容量
-task_review_limit: 3
-
-# doing 的認領心跳超過幾分鐘沒更新，視為死掉、放回 ready
-task_lease_minutes: 60
-
-# task list 把超過幾天沒動靜的任務標「老」（提醒歸系統，封存歸人）
-task_stale_days: 7
-
-# journal task new 預設的編號字首（<專案>-<序號>）
-task_prefix: hy

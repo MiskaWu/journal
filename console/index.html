@@ -118,46 +118,6 @@ section.block h4 { font-size:.82rem; letter-spacing:.1em; margin:0 0 8px; displa
 	padding:4px 12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .daynav button.on { border-color:var(--accent); color:var(--accent); font-weight:700; }
 
-/* ═══ 任務 ═══ */
-.tk-topbar { display:flex; gap:8px; margin:14px 0 4px; flex-wrap:wrap; }
-.tk-topbar input { flex:1; min-width:200px; }
-.tk-sec { margin:22px 0 8px; display:flex; align-items:baseline; gap:10px; }
-.tk-sec h3 { font-size:.85rem; letter-spacing:.12em; margin:0; color:var(--accent); }
-.tk-sec .cnt { font-family:var(--mono); font-size:.74rem; color:var(--faint); }
-.tk-card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-	padding:10px 14px; margin-bottom:8px; }
-.tk-card.hot { border-left:4px solid var(--bad); }
-.tk-card.rev { border-left:4px solid var(--info); }
-.tk-head { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
-.tk-head .tid { font-family:var(--mono); font-size:.8rem; color:var(--accent); }
-.tk-head .ttl2 { font-weight:700; overflow-wrap:anywhere; }
-.tk-head .age { margin-left:auto; font-size:.72rem; color:var(--faint);
-	font-variant-numeric:tabular-nums; white-space:nowrap; }
-.tk-old { color:var(--warn); font-weight:700; }
-.tk-acts { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center; }
-.tk-acts .ghost { font-size:.76rem; padding:3px 10px; }
-.tk-acts .primary { font-size:.76rem; padding:4px 12px; }
-.tk-reply { width:100%; margin-top:8px; font-family:inherit; font-size:.88rem;
-	color:var(--ink); background:var(--paper); border:1px solid var(--line);
-	border-radius:6px; padding:6px 9px; resize:vertical; min-height:38px; }
-.tk-note { font-size:.78rem; color:var(--muted); margin:4px 0 0; }
-.tk-comments { margin:8px 0 0; padding:8px 0 0; border-top:1px dashed var(--line);
-	font-size:.82rem; color:var(--muted); }
-.tk-comments div { margin:2px 0; overflow-wrap:anywhere; }
-.tk-comments .cwho { font-family:var(--mono); font-size:.7rem; color:var(--faint); }
-.nowslot { display:flex; align-items:baseline; gap:10px; background:var(--panel);
-	border:1px solid var(--line); border-radius:10px; padding:9px 14px; margin-bottom:6px; }
-.nowslot .pos { font-family:var(--mono); font-weight:700; color:var(--accent); flex:none; }
-.nowslot .mv { display:flex; gap:3px; margin-left:auto; }
-.nowslot .mv button { border:1px solid var(--line); background:none; border-radius:5px;
-	color:var(--muted); font-size:.74rem; padding:1px 7px; }
-.nowslot.ghostslot { border-style:dashed; color:var(--faint); font-size:.82rem; }
-details.tk-more { margin-top:6px; }
-details.tk-more > summary { cursor:pointer; font-size:.76rem; color:var(--faint); user-select:none; }
-details.tk-more pre { font-family:var(--mono); font-size:.76rem; white-space:pre-wrap;
-	background:var(--mute-bg); border-radius:6px; padding:8px 11px; margin:6px 0 0;
-	overflow-wrap:anywhere; }
-
 /* ═══ 旋鈕 ═══ */
 .knob { display:grid; grid-template-columns:190px 1fr; gap:6px 16px; align-items:center;
 	padding:11px 0; border-bottom:1px solid var(--line); }
@@ -210,7 +170,6 @@ const S = {
 	axis: localStorage.getItem(LS.axis) || 'project',
 	config: { raw:'', sha:'' },
 	goalDefs: [], statuses: [], hosts: [], dailies: [], weeklies: [],
-	tasks: [], archNames: [], now: { raw:'', sha:'', ids: [] },
 	loadedAt: null, tab: 'overview', currentDate: null, traceGoal: '',
 };
 
@@ -345,16 +304,6 @@ function buildAlerts() {
 		if (h.health === 'fail') out.push({ sev:'bad', text:`🔴 ${h.host} 不健康：${h.reason||'無原因'}` });
 		if (h.health === 'degraded') out.push({ sev:'warn', text:`🟡 ${h.host} 降級運行：${h.reason||''}` });
 	}
-	const needsIn = S.tasks.filter(t => t.status === 'needs-input');
-	const oldNeeds = needsIn.filter(t => tkAge(t) > 3);
-	if (oldNeeds.length)
-		out.push({ sev:'bad', text:`📥 ${oldNeeds.length} 件卡住等你回應超過三天（最老 ${Math.max(...oldNeeds.map(tkAge))} 天）—— 任務分頁回一句就能放行` });
-	else if (needsIn.length)
-		out.push({ sev:'warn', text:`📥 ${needsIn.length} 件任務在等你回應` });
-	const revN = S.tasks.filter(t => t.status === 'review').length;
-	const revLim = +yGet(S.config.raw, 'task_review_limit', '3');
-	if (revN >= revLim)
-		out.push({ sev:'warn', text:`🛑 待審 ${revN} 件達煞車上限 ${revLim} —— 代理已停止取件，清掉佇列才會繼續` });
 	const lastTouched = {};
 	for (const d of S.dailies) for (const g of d.goals)
 		if (!lastTouched[g] || d.date > lastTouched[g]) lastTouched[g] = d.date;
@@ -373,17 +322,8 @@ async function loadAll() {
 	view(`<div class="spin">從 GitHub 拉取中…</div>`);
 	const cfgMeta = await gh(`contents/config.yml?ref=${S.branch}`);
 	S.config = { raw: new TextDecoder().decode(Uint8Array.from(atob(cfgMeta.content.replace(/\n/g,'')), c=>c.charCodeAt(0))), sha: cfgMeta.sha };
-	const [goalsRaw, stDir, hoDir, daDir, wkDir, tkDir, arDir, nowMeta] = await Promise.all([
-		ghRaw('GOALS.md'), ghDir('status'), ghDir('hosts'), ghDir('daily'), ghDir('weekly'),
-		ghDir('tasks'), ghDir('tasks/archive'), gh(`contents/now.md?ref=${S.branch}`, { soft:true })]);
-	const tkFiles = (tkDir||[]).filter(f => f.type === 'file' && f.name.endsWith('.md'));
-	S.tasks = (await Promise.all(tkFiles.map(async f =>
-		parseTask(await ghRaw(`tasks/${f.name}`), f.sha)))).filter(Boolean);
-	S.archNames = (arDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name);
-	if (nowMeta) {
-		const raw = new TextDecoder().decode(Uint8Array.from(atob(nowMeta.content.replace(/\n/g,'')), c=>c.charCodeAt(0)));
-		S.now = { raw, sha: nowMeta.sha, ids: parseNowIds(raw) };
-	} else S.now = { raw:'', sha:'', ids: [] };
+	const [goalsRaw, stDir, hoDir, daDir, wkDir] = await Promise.all([
+		ghRaw('GOALS.md'), ghDir('status'), ghDir('hosts'), ghDir('daily'), ghDir('weekly')]);
 	S.goalDefs = parseGoalDefs(goalsRaw || '');
 	const yml = f => f.name.endsWith('.yml');
 	S.statuses = (await Promise.all((stDir||[]).filter(yml).map(f => ghRaw(`status/${f.name}`))))
@@ -411,7 +351,7 @@ function toast(msg) {
 	setTimeout(() => t.classList.remove('show'), 2600);
 }
 const TABS = [
-	['overview','總攬'], ['tasks','任務'], ['daily','日誌'], ['trace','軌跡'],
+	['overview','總攬'], ['daily','日誌'], ['trace','軌跡'],
 	['weekly','週報'], ['knobs','旋鈕'], ['setup','連線'],
 ];
 function renderTabs() {
@@ -577,255 +517,6 @@ function vWeekly() {
 	view(h);
 }
 
-/* ─── 分頁：任務（讀寫！）────────────────────────────────────── */
-/* 人的三個出入口都在這裡：回覆 needs-input、review 按完成、封存。
-   每個按鈕就是一個 commit —— 與 CLI（journal task）讀寫同一批檔案。
-   代理的動作（next/update）不在 UI 上：那是 CLI 的事。 */
-
-function parseTask(raw, sha) {
-	if (!raw) return null;
-	const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-	if (!m) return null;
-	const fm = {};
-	m[1].split('\n').forEach(l => { const i = l.indexOf(':'); if (i > 0) fm[l.slice(0,i).trim()] = l.slice(i+1).trim(); });
-	const comments = [];
-	let inC = false;
-	for (const l of m[2].split('\n')) {
-		if (/^##\s*留言/.test(l)) { inC = true; continue; }
-		if (/^##\s/.test(l)) { inC = false; continue; }
-		const c = inC && l.match(/^-\s+(\S+ \S+)\s+\[(\w+)\]\s+(.*)$/);
-		if (c) comments.push({ ts:c[1], who:c[2], text:c[3] });
-	}
-	return { raw, sha, id: fm.id, title: fm.title || '', status: fm.status || 'backlog',
-		created: fm.created_at || '', claimedBy: fm.claimed_by || '',
-		heartbeatAt: fm.heartbeat_at || '', comments, body: m[2] };
-}
-function parseNowIds(raw) {
-	return (raw||'').split('\n').map(l => l.trim())
-		.filter(l => l && !l.startsWith('#')).map(l => l.split(/\s/)[0]);
-}
-function fmSet(raw, key, val) {
-	const m = raw.match(/^---\n([\s\S]*?)\n---/);
-	if (!m) return raw;
-	const start = 4, end = 4 + m[1].length;
-	const fm = m[1].replace(new RegExp(`^${key}:.*$`, 'm'), val === '' ? `${key}:` : `${key}: ${val}`);
-	return raw.slice(0, start) + fm + raw.slice(end);
-}
-function tkStamp() {
-	const d = new Date(), p = n => String(n).padStart(2,'0');
-	return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function appendComment(raw, who, text) {
-	let out = raw.replace(/\s*$/, '\n');
-	if (!/^## 留言/m.test(out)) out += '\n## 留言\n';
-	return out + `- ${tkStamp()} [${who}] ${text}\n`;
-}
-async function ghPut(path, text, sha, msg) {
-	return gh(`contents/${path}`, { method:'PUT', body:{
-		message: msg, content: b64utf8(text), branch: S.branch, ...(sha ? { sha } : {}) } });
-}
-async function ghDel(path, sha, msg) {
-	return gh(`contents/${path}`, { method:'DELETE', body:{ message: msg, sha, branch: S.branch } });
-}
-
-let tkBusy = false;
-async function tkAct(fn, doneMsg) {
-	if (tkBusy) return toast('上一個動作還在送…');
-	tkBusy = true;
-	try { await fn(); await loadAll(); render(); if (doneMsg) toast(doneMsg); }
-	catch (e) { handleErr(e); }
-	tkBusy = false;
-}
-const tkOf = id => S.tasks.find(t => t.id === id);
-
-async function tkSetStatus(id, status, msg, extra) {
-	const t = tkOf(id);
-	let raw = fmSet(t.raw, 'status', status);
-	if (extra) raw = extra(raw);
-	await ghPut(`tasks/${id}.md`, raw, t.sha, msg);
-}
-async function tkSaveNow(ids) {
-	const head = (S.now.raw.split('\n').filter(l => l.trim().startsWith('#')).join('\n')) ||
-		'# now —— 僅人可寫；一行一個編號，由上而下就是順序，最多三行。';
-	await ghPut('now.md', head + '\n' + ids.join('\n') + (ids.length ? '\n' : ''),
-		S.now.sha, `web: now ← ${ids.join(', ') || '（清空）'}`);
-}
-
-function tkAge(t) {
-	const base = (t.heartbeatAt || t.created || '').slice(0,10);
-	if (!base) return 0;
-	return daysBetween(base, new Date().toISOString().slice(0,10));
-}
-function tkChip(st) {
-	const c = { ready:'t-pass', doing:'t-partial', 'needs-input':'t-fail',
-		review:'t-manual', backlog:'t-mute', done:'t-mute' }[st] || 't-mute';
-	return `<span class="tag ${c}">${esc(st)}</span>`;
-}
-function tkLink(s) {
-	return esc(s).replace(/https?:\/\/[^\s<]+/g, u =>
-		`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
-}
-function tkCommentsHtml(t, n = 3) {
-	if (!t.comments.length) return '';
-	const last = t.comments.slice(-n);
-	return `<div class="tk-comments">` + last.map(c =>
-		`<div><span class="cwho">${esc(c.ts)} ${esc(c.who)}</span> ${tkLink(c.text)}</div>`).join('') + '</div>';
-}
-function tkCardHead(t) {
-	const stale = +yGet(S.config.raw, 'task_stale_days', '7');
-	const age = tkAge(t);
-	const pos = S.now.ids.indexOf(t.id);
-	return `<div class="tk-head"><span class="tid">${esc(t.id)}</span>
-		${tkChip(t.status)}${pos >= 0 ? `<span class="tag t-manual">now${pos+1}</span>` : ''}
-		<span class="ttl2">${esc(t.title)}</span>
-		<span class="age${age > stale ? ' tk-old' : ''}">${age > stale ? '老 · ' : ''}${age} 天</span></div>`;
-}
-function tkMoreHtml(t) {
-	return `<details class="tk-more"><summary>全文與留言</summary><pre>${esc(t.body.trim())}</pre></details>`;
-}
-
-function vTasks() {
-	const by = st => S.tasks.filter(t => t.status === st);
-	const needs = by('needs-input').sort((a,b) => tkAge(b) - tkAge(a));
-	const nowSet = new Set(S.now.ids);
-	let h = `<div class="tk-topbar">
-		<input id="tkNewTitle" placeholder="心流中途一句話丟進待辦 —— 規格等要動手前才補">
-		<button class="primary" id="tkNewBtn">開新任務</button>
-	</div>`;
-
-	/* 現在：now.md 的三個格位。行序即優先度，只有人（這裡）能動。 */
-	h += `<div class="tk-sec"><h3>現在</h3><span class="cnt">${S.now.ids.length}/3 · 行序即優先度 · 只有你能動這份清單</span></div>`;
-	S.now.ids.forEach((id, i) => {
-		const t = tkOf(id);
-		h += `<div class="nowslot"><span class="pos">${i+1}</span>`;
-		h += t ? `<span class="tid" style="font-family:var(--mono);font-size:.8rem">${esc(id)}</span>
-				${tkChip(t.status)} <span class="ttl2">${esc(t.title)}</span>`
-			: `<span>${esc(id)} <span class="dim">（找不到 —— 已封存？）</span></span>`;
-		h += `<span class="mv">
-			<button data-nowup="${esc(id)}" ${i===0?'disabled':''}>↑</button>
-			<button data-nowdn="${esc(id)}" ${i===S.now.ids.length-1?'disabled':''}>↓</button>
-			<button data-nowrm="${esc(id)}">移出</button></span></div>`;
-	});
-	if (!S.now.ids.length)
-		h += `<div class="nowslot ghostslot">now 是空的 —— 從下面的就緒／待辦把事情「排進 now」，代理才有下一件。</div>`;
-
-	/* 等你回應：人的收件匣，最老的排最上面 */
-	h += `<div class="tk-sec"><h3>等你回應</h3><span class="cnt">${needs.length} 件${needs.length?' · 回覆送出即轉回就緒':''}</span></div>`;
-	if (!needs.length) h += `<p class="tk-note">沒有卡住等你的 —— 好事。</p>`;
-	for (const t of needs) {
-		h += `<div class="tk-card hot">${tkCardHead(t)}${tkCommentsHtml(t)}
-			<textarea class="tk-reply" data-reply="${esc(t.id)}" placeholder="回答寫這裡 —— 會以留言記在任務上，並把任務轉回就緒"></textarea>
-			<div class="tk-acts"><button class="primary" data-send="${esc(t.id)}">回覆並就緒</button>
-			<button class="ghost" data-arch="${esc(t.id)}">封存</button></div>${tkMoreHtml(t)}</div>`;
-	}
-
-	/* 待審：合併請求的佇列。超過煞車上限時代理已停止取件。 */
-	const rev = by('review');
-	const limit = +yGet(S.config.raw, 'task_review_limit', '3');
-	h += `<div class="tk-sec"><h3>待審</h3><span class="cnt">${rev.length} 件 · 煞車上限 ${limit}${rev.length>=limit?' —— 代理已停止取件':''}</span></div>`;
-	for (const t of rev) {
-		h += `<div class="tk-card rev">${tkCardHead(t)}${tkCommentsHtml(t)}
-			<div class="tk-acts"><button class="primary" data-done="${esc(t.id)}">審過合併了 → 完成</button>
-			<button class="ghost" data-back="${esc(t.id)}">退回就緒重做</button></div>${tkMoreHtml(t)}</div>`;
-	}
-	if (!rev.length) h += `<p class="tk-note">佇列是空的。</p>`;
-
-	/* 進行中 */
-	const doing = by('doing');
-	if (doing.length) {
-		h += `<div class="tk-sec"><h3>進行中</h3><span class="cnt">${doing.length} 件</span></div>`;
-		for (const t of doing) {
-			h += `<div class="tk-card">${tkCardHead(t)}
-				<p class="tk-note">認領者 <code>${esc(t.claimedBy||'?')}</code> · 心跳 ${esc((t.heartbeatAt||'—').slice(0,16))}（超過租約會自動放回就緒）</p>
-				${tkCommentsHtml(t,2)}${tkMoreHtml(t)}</div>`;
-		}
-	}
-
-	/* 就緒與待辦：入 now、貼標記、封存 */
-	const pool = [...by('ready'), ...by('backlog')];
-	h += `<div class="tk-sec"><h3>就緒與待辦</h3><span class="cnt">${pool.length} 件 · ready = 你判斷可以放手的標記</span></div>`;
-	for (const t of pool) {
-		const canNow = t.status === 'ready' && !nowSet.has(t.id) && S.now.ids.length < 3;
-		h += `<div class="tk-card">${tkCardHead(t)}<div class="tk-acts">`;
-		if (t.status === 'backlog')
-			h += `<button class="primary" data-ready="${esc(t.id)}">可以放手 → 就緒</button>`;
-		else {
-			h += canNow ? `<button class="primary" data-now="${esc(t.id)}">排進 now</button>`
-				: (nowSet.has(t.id) ? '' : `<span class="tk-note">now 已滿 —— 先移出一件</span>`);
-			h += `<button class="ghost" data-unready="${esc(t.id)}">退回待辦</button>`;
-		}
-		h += `<button class="ghost" data-arch="${esc(t.id)}">封存</button></div>${tkMoreHtml(t)}</div>`;
-	}
-	if (!pool.length) h += `<p class="tk-note">池子是空的 —— 上面丟一句話進來。</p>`;
-
-	/* 完成：等待封存的出口 */
-	const done = by('done');
-	if (done.length) {
-		h += `<div class="tk-sec"><h3>完成</h3><span class="cnt">${done.length} 件 · 封存後離開清單</span></div>`;
-		for (const t of done) {
-			h += `<div class="tk-card">${tkCardHead(t)}
-				<div class="tk-acts"><button class="ghost" data-arch="${esc(t.id)}">封存</button></div></div>`;
-		}
-	}
-	h += `<p class="tk-note" style="margin-top:18px">封存共 ${S.archNames.length} 件（<code>tasks/archive/</code>）。封存與完成永遠是這裡或 CLI 的人用指令 —— 代理只能推到待審。</p>`;
-
-	view(h);
-
-	/* 事件接線：每顆按鈕一個 commit */
-	const on = (sel, fn) => $view.querySelectorAll(sel).forEach(b => b.addEventListener('click', fn));
-	document.getElementById('tkNewBtn').addEventListener('click', () => {
-		const inp = document.getElementById('tkNewTitle');
-		const title = inp.value.trim();
-		if (!title) return toast('先寫一句話');
-		const pre = yGet(S.config.raw, 'task_prefix', 'hy');
-		const nums = [...S.tasks.map(t => t.id), ...S.archNames.map(n => n.replace('.md',''))]
-			.map(id => (id.match(new RegExp(`^${pre}-(\\d+)$`)) || [])[1]).filter(Boolean).map(Number);
-		const id = `${pre}-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4,'0')}`;
-		const raw = `---\nid: ${id}\ntitle: ${title}\nstatus: backlog\ncreated_at: ${new Date().toISOString()}\nexternal:\nclaimed_by:\nclaimed_at:\nheartbeat_at:\nheartbeat_epoch:\n---\n\n## 描述\n\n${title}\n\n## 驗收\n\n（貼 ready 前補上 —— 完成條件寫成看得出對錯的句子）\n\n## 留言\n`;
-		tkAct(() => ghPut(`tasks/${id}.md`, raw, '', `web: task 新增 ${id} ${title}`), `已開 ${id}`);
-	});
-	on('[data-ready]', e => tkAct(() =>
-		tkSetStatus(e.target.dataset.ready, 'ready', `web: task ${e.target.dataset.ready} → ready`),
-		'已就緒 —— 要排優先就再按「排進 now」'));
-	on('[data-unready]', e => tkAct(() =>
-		tkSetStatus(e.target.dataset.unready, 'backlog', `web: task ${e.target.dataset.unready} → backlog`)));
-	on('[data-done]', e => tkAct(() =>
-		tkSetStatus(e.target.dataset.done, 'done', `web: task ${e.target.dataset.done} → done`), '完成'));
-	on('[data-back]', e => tkAct(() =>
-		tkSetStatus(e.target.dataset.back, 'ready', `web: task ${e.target.dataset.back} 退回 ready`,
-			raw => appendComment(raw, 'human', '退回重做 —— 細節看 MR 上的 review 留言')), '已退回就緒'));
-	on('[data-send]', e => {
-		const id = e.target.dataset.send;
-		const txt = $view.querySelector(`[data-reply="${id}"]`).value.trim();
-		if (!txt) return toast('回覆是空的');
-		tkAct(() => tkSetStatus(id, 'ready', `web: task ${id} 回應 → ready`,
-			raw => appendComment(fmSet(fmSet(raw, 'claimed_by', ''), 'claimed_at', ''), 'human', txt)),
-			'已回覆並轉回就緒');
-	});
-	on('[data-arch]', e => {
-		const id = e.target.dataset.arch;
-		const t = tkOf(id);
-		if (!confirm(`封存 ${id}？（檔案移到 tasks/archive/，隨時可手動移回）`)) return;
-		tkAct(async () => {
-			await ghPut(`tasks/archive/${id}.md`, t.raw, '', `web: task 封存 ${id}`);
-			await ghDel(`tasks/${id}.md`, t.sha, `web: task 封存 ${id}（移除原位）`);
-			if (S.now.ids.includes(id)) await tkSaveNow(S.now.ids.filter(x => x !== id));
-		}, `已封存 ${id}`);
-	});
-	on('[data-now]', e => tkAct(() =>
-		tkSaveNow([...S.now.ids, e.target.dataset.now]), '已排進 now'));
-	on('[data-nowrm]', e => tkAct(() =>
-		tkSaveNow(S.now.ids.filter(x => x !== e.target.dataset.nowrm))));
-	const swap = (id, d) => {
-		const a = [...S.now.ids], i = a.indexOf(id);
-		if (i < 0 || i + d < 0 || i + d >= a.length) return;
-		[a[i], a[i+d]] = [a[i+d], a[i]];
-		tkAct(() => tkSaveNow(a));
-	};
-	on('[data-nowup]', e => swap(e.target.dataset.nowup, -1));
-	on('[data-nowdn]', e => swap(e.target.dataset.nowdn, 1));
-}
-
 /* ─── 分頁：旋鈕（寫入！）────────────────────────────────────── */
 const KNOBS = [
 	{ key:'standup_lines',  type:'range', min:1, max:10, label:'早會力度',
@@ -844,16 +535,6 @@ const KNOBS = [
 	  desc:'超過幾天沒回報算 ⚫ 沉默。' },
 	{ key:'goal_stale_days',type:'number', min:1, max:60, label:'目標停滯門檻（天）',
 	  desc:'目標幾天沒出現在 daily 算 🕳 沒動。' },
-	{ key:'task_stalled',   type:'select', options:['idle','backlog'], label:'任務全卡住時',
-	  desc:'now 三件全卡住時代理的行為：idle=閒置等你清積壓；backlog=去待辦池撈 ready 的繼續產出。' },
-	{ key:'task_review_limit', type:'number', min:1, max:10, label:'待審煞車上限',
-	  desc:'待審達這個數，代理停止認領 —— 吞吐量等於你的審查容量。' },
-	{ key:'task_lease_minutes', type:'number', min:10, max:240, label:'認領租約（分鐘）',
-	  desc:'doing 的心跳超過這個分鐘數沒更新，視為死掉、放回就緒。' },
-	{ key:'task_stale_days', type:'number', min:1, max:60, label:'任務標老門檻（天）',
-	  desc:'超過幾天沒動靜的任務標「老」。提醒歸系統，封存永遠歸你。' },
-	{ key:'task_prefix',    type:'text', label:'任務編號字首', placeholder:'hy',
-	  desc:'新任務的編號格式是 <字首>-<四位序號>。' },
 ];
 function vKnobs() {
 	let h = `<h2 class="sec">旋鈕 <span class="dim">改完按儲存 = 直接 commit 到 config.yml，各機下一輪 pull 生效</span></h2><div class="card">`;
@@ -866,9 +547,6 @@ function vKnobs() {
 				<b style="margin-left:8px">${esc(v||'3')}</b>`;
 		else if (k.type === 'time')
 			h += `<input type="time" value="${esc(v)}" data-knob="${k.key}">`;
-		else if (k.type === 'select')
-			h += `<select data-knob="${k.key}">` + k.options.map(o =>
-				`<option ${o === (v || k.options[0]) ? 'selected' : ''}>${o}</option>`).join('') + '</select>';
 		else if (k.type === 'number')
 			h += `<input type="number" min="${k.min}" max="${k.max}" value="${esc(v)}" data-knob="${k.key}" style="width:90px">`;
 		else
@@ -948,7 +626,7 @@ function vSetup() {
 
 /* ─── 路由 ───────────────────────────────────────────────────── */
 function render() {
-	({ overview:vOverview, tasks:vTasks, daily:vDaily, trace:vTrace,
+	({ overview:vOverview, daily:vDaily, trace:vTrace,
 	   weekly:vWeekly, knobs:vKnobs, setup:vSetup })[S.tab]();
 }
 renderTabs();
