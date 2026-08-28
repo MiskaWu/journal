@@ -88,6 +88,36 @@ jr_doctor_scan() {
 		jr_doctor_add_fix timer '安裝並啟用夜間 timer'
 		_advice=$((_advice + 1))
 	fi
+	# aggregate timer 只該存在於 aggregator —— 兩個方向都要照：缺了 L3 不會動，
+	# 反向殘留則是每晚白跑（jr_install_timer 兩種都修得回來）
+	if [ -z "${JOURNAL_NO_TIMER:-}" ] && jr_has systemctl; then
+		_dr_role=$(jr_yaml_get "$JR_HOST_YML" role node)
+		if [ "$_dr_role" = 'aggregator' ]; then
+			if systemctl --user is-enabled journal-aggregate.timer > /dev/null 2>&1; then
+				jr_doctor_row ok aggregate 'journal-aggregate.timer 已啟用'
+			else
+				jr_doctor_row warn aggregate 'aggregator 卻沒啟用 aggregate timer → L3 不會動'
+				jr_doctor_add_fix timer '安裝並啟用夜間 timer'
+				_advice=$((_advice + 1))
+			fi
+		elif systemctl --user is-enabled journal-aggregate.timer > /dev/null 2>&1; then
+			jr_doctor_row warn aggregate '非 aggregator 卻留著 aggregate timer（角色改過的殘留）'
+			jr_doctor_add_fix timer '重跑 timer 安裝（會順手拆掉殘留）'
+			_advice=$((_advice + 1))
+		fi
+	fi
+	_dr_link="$HOME/.local/bin/journal"
+	if [ -L "$_dr_link" ] && [ "$(readlink "$_dr_link" 2>/dev/null)" = "$JR_ROOT/bin/journal" ]; then
+		jr_doctor_row ok link "$_dr_link"
+	elif [ -e "$_dr_link" ] || [ -L "$_dr_link" ]; then
+		jr_doctor_row warn link "$_dr_link 沒指到這份 checkout"
+		jr_doctor_add_fix link '重建 CLI symlink'
+		_advice=$((_advice + 1))
+	else
+		jr_doctor_row warn link "$_dr_link 不存在 → 要用完整路徑才叫得到"
+		jr_doctor_add_fix link '建立 CLI symlink'
+		_advice=$((_advice + 1))
+	fi
 	if jr_has loginctl; then
 		_linger=$(loginctl show-user "$USER" -p Linger 2>/dev/null | cut -d= -f2)
 		if [ "$_linger" = 'yes' ]; then
@@ -115,6 +145,7 @@ jr_doctor_fix() {
 	case $1 in
 		hook)   jr_install_hook ;;
 		timer)  jr_load_host 2>/dev/null; jr_install_timer ;;
+		link)   jr_link_bin ;;
 		init)   jr_info '→ 跑：journal init（或 journal init --local 先離線）' ;;
 		linger)
 			jr_info "→ 你自己跑（系統層，journal 不碰 sudo）："

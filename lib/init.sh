@@ -186,7 +186,7 @@ jr_install_timer() {
 		*) jr_warn "rollup_time 格式不對（$_when），用 21:30"; _when='21:30' ;;
 	esac
 
-	_unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+	_unitdir=$JR_UNIT_DIR
 	mkdir -p "$_unitdir"
 	cat > "$_unitdir/journal-rollup.service" <<EOF
 [Unit]

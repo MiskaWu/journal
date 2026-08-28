@@ -41,6 +41,23 @@ jr_remote_ssh_host() {
 : "${JR_CONFIG_HOME:=${XDG_CONFIG_HOME:-$HOME/.config}/journal}"
 JR_HOST_YML="$JR_CONFIG_HOME/host.yml"
 
+# ------------------------------------------------------------ 腳印清單（唯一宣告）
+# journal 在機器上的全部腳印。init 裝、doctor 對帳、uninstall 拆，三邊都讀這裡；
+# 要加腳印先改這張表，不加散裝路徑（2026-08-28 收攏：清單分家的實害是 aggregate
+# 兩個 unit init 會裝、uninstall 沒拆，見 DECISIONS D20）。
+#
+#   ~/.local/bin/journal          CLI symlink     init / doctor link  / purge 刪
+#   settings.json 的 SessionEnd   hook            init / doctor hook  / uninstall 拆
+#   $JR_UNIT_DIR/journal-*        systemd units   init / doctor timer / uninstall 拆
+#   $JR_CONFIG_HOME（host.yml）   本機身分        init / doctor host  / purge 刪
+#   data repo（host.yml 記載）    資料與 .spool   init / doctor data  / purge 刪
+#   deploy key ＋ ssh drop-in     provider 憑證   init / selfcheck    / purge 刪
+JR_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+# unit 全集。init 依角色只裝子集（aggregate 兩個只有 aggregator 有），
+# uninstall 一律照全集拆——角色可能改過，殘 unit 每晚會去執行已刪掉的入口。
+JR_UNIT_FILES='journal-rollup.service journal-rollup.timer journal-onfail.service journal-aggregate.service journal-aggregate.timer'
+JR_TIMER_UNITS='journal-rollup.timer journal-aggregate.timer'
+
 # 顏色只在 TTY 上開（D17 的同一個精神：背景路徑不要吐控制碼）
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
 	JR_C_RED=$(printf '\033[31m'); JR_C_YEL=$(printf '\033[33m')

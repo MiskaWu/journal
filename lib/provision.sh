@@ -409,14 +409,18 @@ jr_cmd_uninstall() {
 	case ${1:-} in --purge) _purge=1 ;; esac
 	jr_load_host
 
-	# timer
+	# timer —— 照腳印清單（common.sh 的 JR_UNIT_FILES）全集拆，不看角色：
+	# aggregate 兩個 unit 只有 aggregator 會裝，但角色可能改過，殘 unit
+	# 每晚會去執行已刪掉的入口、再觸發同樣已刪掉的 onfail
 	if [ -z "${JOURNAL_NO_TIMER:-}" ] && jr_has systemctl; then
-		systemctl --user disable --now journal-rollup.timer > /dev/null 2>&1
-		rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/journal-rollup.service" \
-			"${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/journal-rollup.timer" \
-			"${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/journal-onfail.service"
+		for _t in $JR_TIMER_UNITS; do
+			systemctl --user disable --now "$_t" > /dev/null 2>&1
+		done
+		for _u in $JR_UNIT_FILES; do
+			rm -f "$JR_UNIT_DIR/$_u"
+		done
 		systemctl --user daemon-reload 2>/dev/null
-		jr_ok 'timer 已移除'
+		jr_ok 'timer 已移除（rollup／onfail／aggregate）'
 	fi
 
 	# hook
