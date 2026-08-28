@@ -658,6 +658,34 @@ grep -qF 'session-end.sh' "$T/claude/settings.json" && bad 'uninstall 移除 hoo
 [ -f "$T/data/daily/2026-07-15__testhost.md" ] && ok '  資料保留' || bad '  資料保留' 'daily 不見了'
 [ -f "$T/cfg/host.yml" ] && ok '  本機身分保留' || bad '  本機身分保留' '被刪了'
 
+# uninstall 的 timer 分支：J 固定帶 JOURNAL_NO_TIMER=1，上面那條測不到它——
+# 用 systemctl 墊片放行這一條路，斷言 unit 全集（含 aggregate）都被拆掉。
+# aggregate 兩個 unit 曾經 init 裝、uninstall 不拆（D20 的緣起），這裡咬住不回退。
+cat > "$T/bin/systemctl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${SYSTEMCTL_LOG:?}"
+exit 0
+EOF
+chmod +x "$T/bin/systemctl"
+mkdir -p "$T/home/.config/systemd/user"
+for _u in journal-rollup.service journal-rollup.timer journal-onfail.service \
+          journal-aggregate.service journal-aggregate.timer; do
+	: > "$T/home/.config/systemd/user/$_u"
+done
+env HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config" JR_CONFIG_HOME="$T/cfg" \
+	CLAUDE_CONFIG_DIR="$T/claude" SYSTEMCTL_LOG="$T/systemctl.log" \
+	PATH="$T/bin:$PATH" "$BIN" uninstall > /dev/null 2>&1
+_left=''
+for _u in journal-rollup.service journal-rollup.timer journal-onfail.service \
+          journal-aggregate.service journal-aggregate.timer; do
+	[ -e "$T/home/.config/systemd/user/$_u" ] && _left="$_left $_u"
+done
+[ -z "$_left" ] && ok 'uninstall 拆光 unit 全集（含 aggregate）' \
+	|| bad 'uninstall 拆光 unit 全集（含 aggregate）' "殘留:$_left"
+a_grep '  aggregate timer 有被 disable' "$T/systemctl.log" '--user disable --now journal-aggregate.timer'
+a_grep '  daemon-reload 有跑' "$T/systemctl.log" 'daemon-reload'
+rm -f "$T/bin/systemctl"   # 撤墊片，別讓後面的測試誤以為有可用的 systemctl
+
 # ================================================================ 10 · 中心（P5）
 
 printf '\n== 10 · 中心 ==\n'
