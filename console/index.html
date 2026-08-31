@@ -245,7 +245,8 @@ const S = {
 	axis: localStorage.getItem(LS.axis) || 'project',
 	config: { raw:'', sha:'' },
 	goalDefs: [], statuses: [], hosts: [], dailies: [], weeklies: [],
-	loadedAt: null, tab: 'overview', currentDate: null, calY: 0, calM: 0, traceGoal: '',
+	loadedAt: null, tab: 'overview', currentDate: null, calY: 0, calM: 0,
+	dailyIdx: [], loadedMonths: null, calBusy: false, traceGoal: '',
 };
 
 /* ─── GitHub API ─────────────────────────────────────────────── */
@@ -393,6 +394,15 @@ function buildAlerts() {
 }
 
 /* ─── 載入 ───────────────────────────────────────────────────── */
+async function loadMonth(mo) {   // mo = 'YYYY-MM'；抓過的月份不重抓
+	if (S.loadedMonths.has(mo)) return;
+	const names = S.dailyIdx.filter(n => n.startsWith(mo));
+	const parsed = (await Promise.all(names.map(n => ghRaw(`daily/${n}`))))
+		.filter(Boolean).map(parseDaily).filter(Boolean);
+	S.dailies.push(...parsed);
+	S.dailies.sort((a,b) => a.date < b.date ? 1 : -1);
+	S.loadedMonths.add(mo);
+}
 async function loadAll() {
 	view(`<div class="loading"><span class="spin"></span>從 GitHub 拉取中…</div>`);
 	const cfgMeta = await gh(`contents/config.yml?ref=${S.branch}`);
@@ -405,11 +415,10 @@ async function loadAll() {
 		.filter(Boolean).flatMap(parseStatus);
 	S.hosts = (await Promise.all((hoDir||[]).filter(yml).map(f => ghRaw(`hosts/${f.name}`))))
 		.filter(Boolean).map(parseHost);
-	const dailyFiles = (daDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name)
-		.sort().reverse().slice(0, 40);
-	S.dailies = (await Promise.all(dailyFiles.map(n => ghRaw(`daily/${n}`))))
-		.filter(Boolean).map(parseDaily).filter(Boolean)
-		.sort((a,b) => a.date < b.date ? 1 : -1);
+	S.dailyIdx = (daDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name).sort().reverse();
+	S.dailies = []; S.loadedMonths = new Set();
+	for (const mo of [...new Set(S.dailyIdx.map(n => n.slice(0,7)))].slice(0, 2))
+		await loadMonth(mo);
 	S.weeklies = await Promise.all(((wkDir||[]).filter(f => f.name.endsWith('.md')).map(f => f.name)
 		.sort().reverse().slice(0, 12)).map(async n => ({ name:n.replace('.md',''), raw: await ghRaw(`weekly/${n}`) })));
 	S.loadedAt = new Date();
@@ -548,7 +557,7 @@ function calendarHtml() {
 			key === S.currentDate ? 'on' : '', key === todayKey ? 'today' : ''].filter(Boolean).join(' ');
 		cells += `<button class="${cls}" data-day="${key}"><span>${dn}</span><span class="cd"></span></button>`;
 	}
-	const yrs = [...new Set([...S.dailies.map(d => +d.date.slice(0,4)), y, +todayKey.slice(0,4)])].sort();
+	const yrs = [...new Set([...S.dailyIdx.map(n => +n.slice(0,4)), y, +todayKey.slice(0,4)])].sort();
 	const monthCount = Object.keys(byDate).filter(k => k.startsWith(`${y}-${pad2(m)}`)).length;
 	return `<div class="card cal">
 		<div class="cal-head">
@@ -563,7 +572,7 @@ function calendarHtml() {
 		<div class="cal-grid">${['日','一','二','三','四','五','六'].map(w => `<span class="cal-wd">${w}</span>`).join('')}</div>
 		<div class="cal-grid">${cells}</div>
 		<div class="cal-foot">
-			<span>本月 <b class="mono">${monthCount}</b> 天有記錄</span>
+			<span>本月 <b class="mono">${monthCount}</b> 天有記錄${S.calBusy ? ' <span class="spin"></span>' : ''}</span>
 			<span style="margin-left:auto"><button class="btn" id="calToday" style="padding:3px 10px;font-size:11.5px">今天</button></span>
 		</div>
 		<div class="cal-legend">
@@ -591,19 +600,30 @@ function vDaily() {
 	}
 	h += '</div></div>';
 	view(h);
+	const go = async (y, m) => {
+		S.calY = y; S.calM = m;
+		const mo = `${y}-${pad2(m)}`;
+		if (!S.loadedMonths.has(mo)) {
+			S.calBusy = true; vDaily();
+			try { await loadMonth(mo); }
+			catch (e) { S.calBusy = false; return handleErr(e, true); }
+			S.calBusy = false;
+		}
+		vDaily();
+	};
 	const nav = dy => {
 		let m = S.calM + dy, y = S.calY;
 		if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
-		S.calM = m; S.calY = y; vDaily();
+		go(y, m);
 	};
 	document.getElementById('calPrev').addEventListener('click', () => nav(-1));
 	document.getElementById('calNext').addEventListener('click', () => nav(1));
-	document.getElementById('calYear').addEventListener('change', e => { S.calY = +e.target.value; vDaily(); });
-	document.getElementById('calMonth').addEventListener('change', e => { S.calM = +e.target.value; vDaily(); });
+	document.getElementById('calYear').addEventListener('change', e => go(+e.target.value, S.calM));
+	document.getElementById('calMonth').addEventListener('change', e => go(S.calY, +e.target.value));
 	document.getElementById('calToday').addEventListener('click', () => {
 		const t = new Date();
-		S.calY = t.getFullYear(); S.calM = t.getMonth() + 1;
-		S.currentDate = localDateKey(t); vDaily();
+		S.currentDate = localDateKey(t);
+		go(t.getFullYear(), t.getMonth() + 1);
 	});
 	$view.querySelectorAll('.cal-day[data-day]').forEach(b =>
 		b.addEventListener('click', () => { S.currentDate = b.dataset.day; vDaily(); }));
@@ -662,7 +682,7 @@ function vTrace() {
 	let h = `<div class="card"><div class="card-head"><div class="t">目標推進線</div>
 		<div class="right"><select id="traceSel">${goals.map(g =>
 			`<option ${g===S.traceGoal?'selected':''}>${esc(g)}</option>`).join('')}</select></div></div>
-		<p class="muted" style="margin:0 0 6px">靠 goals_touched 推斷串線 —— 導覽用，不是證據</p>`;
+		<p class="muted" style="margin:0 0 6px">靠 goals_touched 推斷串線 —— 導覽用，不是證據。範圍：已載入的 ${S.loadedMonths ? S.loadedMonths.size : 0} 個月（在日誌頁翻月會多載）</p>`;
 	const hits = S.dailies.filter(d => d.goals.includes(S.traceGoal)).sort((a,b)=>a.date<b.date?1:-1);
 	if (!hits.length) h += '<p class="empty">沒有任何 daily 標記過這個目標。</p>';
 	for (const d of hits) {
