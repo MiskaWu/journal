@@ -24,6 +24,7 @@
 | **D18** | **程式碼與資料分兩個 repo** | `journal`(碼,agent 唯讀)／`journal-data`(資料,agent 可寫) | ①歷史乾淨:否則 `git log` 被每日 rollup 灌爆,找程式碼變更極痛苦;②**爆炸半徑**:自動化憑證只能寫資料、寫不了程式碼。若同一個 repo,任一台機器的 deploy key 外洩即等於能改 `bin/journal`,而每台機器都會 pull 並執行它。D13 的「push 即部署」保留,但變成**單向**。 |
 | **D19** | **daily 分兩層:摘要(回報層)+ 四段(細節層)** | `## 摘要` 逐條帶結構 `專案 \| 類型 \| 標籤 \| 一句話`,門檻「成果可見」,5–8 行 | 使用者實際使用後的回饋(2026-07-29):四段力度太細,日常要的是組長視角 ——「各 agent 完成了什麼有價值的事、進度在哪」,偶爾才點開細節。**分組軸(專案/標籤/類型)是檢視時的樞紐,不烤進生成的文字** —— 使用者明確要求軸可自訂,烤死就得重新生成。門檻目前固定,列為未來可進 config 的設定。 |
 | **D20** | **機器腳印收攏成單一清單** | 腳印(unit 名單、unit 目錄)只在 `common.sh` 宣告一次;init 依角色裝子集,uninstall 一律照全集拆,doctor 對同一份帳(含 aggregate timer 與 CLI symlink) | 清單分家的實害(2026-08-28 在暫代 aggregator 的 dev 機抓到):aggregate 兩個 unit init 會裝、uninstall 沒拆 —— purge 之後殘 timer 每晚去執行已刪掉的 symlink,再觸發同樣已刪掉的 onfail,變成永久夜間報錯。拆除不看角色,因為角色可能改過。smoke 原本的 uninstall 測試因 `JOURNAL_NO_TIMER=1` 整段跳過 timer 分支而默默放行,已補 systemctl 墊片案例咬住。同型拍板:taskwire-install、canopy Makefile(同日)。 |
+| **D21** | **console 改 Go＋React，資料語意不動** | 後端 `console/server`(Go,go:embed 前端,只做靜態伺服,零憑證)/前端 `console/web`(React 19+TS+Vite singlefile);建置 `make console` → `bin/journal-console`(gitignore),init --console 缺建置會指路 | 對齊 canopy/taskwire 的服務形狀(2026-08-31 使用者拍板)。讀寫仍走瀏覽器直連 GitHub API —— 討論過改讀本機 data checkout,被否決:①本機副本失敗得安靜(pull 沒跑你看到的是舊資料還不自知,違反 §10);②旋鈕兩段式寫入(本地 commit→push)可能默默沒傳出去;③常駐服務持有 push 憑證放大爆炸半徑(D18)。O9 的零後端語意完好。PAT 到期提醒(30 天門檻,參考 taskwire #32)因 GitHub CORS 不曝露到期標頭,改由使用者在連線頁選填到期日、前端計算。 |
 
 ## 尚待拍板
 
