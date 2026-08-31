@@ -123,13 +123,36 @@ input[type=range]:focus{outline:none}
 .standup p .dot{margin-top:0;align-self:center}
 .standup p.red{color:var(--bad)}
 
-/* 日誌導覽與軸切換 */
-.daynav{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
-.daynav button{border:1px solid var(--line);background:var(--panel);border-radius:8px;
-	padding:5px 12px;color:var(--ink2);font-family:var(--mono);font-size:11.5px;
-	font-weight:600;white-space:nowrap;cursor:pointer}
-.daynav button:hover{border-color:var(--acc);color:var(--acc)}
-.daynav button.on{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+/* 日誌：日曆導覽與軸切換 */
+.dgrid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+.dcol{display:flex;flex-direction:column;gap:14px;min-width:0}
+.cal{position:sticky;top:0;display:flex;flex-direction:column;gap:10px}
+.cal-head{display:flex;align-items:center;gap:6px}
+.cal-head .sel{flex:1 1 auto;display:flex;justify-content:center;gap:6px}
+.cal-head select{padding:3px 6px;font-size:12px;font-weight:600}
+.cal-nav{width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+	background:var(--panel);border:1px solid #d5dae2;border-radius:8px;color:#3f4754;padding:0}
+.cal-nav:hover{border-color:var(--acc);color:var(--acc)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.cal-wd{text-align:center;font-size:11px;font-weight:600;color:#8892a0}
+.cd{width:5px;height:5px;border-radius:999px;display:inline-block;background:transparent;flex:0 0 auto}
+.cal-day{height:38px;border:none;outline:1px solid transparent;outline-offset:-1px;
+	border-radius:8px;background:none;color:var(--ink2);font-family:var(--mono);
+	font-size:12px;font-weight:600;display:flex;flex-direction:column;
+	align-items:center;justify-content:center;gap:2px;padding:0}
+.cal-day:hover{background:var(--line2)}
+.cal-day.has{color:var(--ink)}
+.cal-day.has .cd{background:var(--ok)}
+.cal-day.red .cd{background:var(--bad)}
+.cal-day.out{color:#c6ccd6;cursor:default}
+.cal-day.out:hover{background:none}
+.cal-day.today{outline-color:var(--acc)}
+.cal-day.on,.cal-day.on:hover{background:var(--acc);color:#fff}
+.cal-day.on .cd{background:#fff}
+.cal-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line2);
+	padding-top:10px;font-size:12px;color:var(--ink2)}
+.cal-legend{display:flex;gap:14px;font-size:11px;color:#8892a0;align-items:center}
+.cal-legend span{display:flex;gap:5px;align-items:center}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;
 	overflow:hidden;background:var(--panel)}
 .seg button{border:none;background:none;font-family:var(--sans);font-size:11.5px;
@@ -174,6 +197,8 @@ details.raw[open] > summary{margin-bottom:10px}
 	.side-foot{display:none}
 	.knob{grid-template-columns:1fr}
 	.hrow .meta{text-align:left}
+	.dgrid{grid-template-columns:1fr}
+	.cal{position:static}
 }
 </style>
 </head>
@@ -220,7 +245,7 @@ const S = {
 	axis: localStorage.getItem(LS.axis) || 'project',
 	config: { raw:'', sha:'' },
 	goalDefs: [], statuses: [], hosts: [], dailies: [], weeklies: [],
-	loadedAt: null, tab: 'overview', currentDate: null, traceGoal: '',
+	loadedAt: null, tab: 'overview', currentDate: null, calY: 0, calM: 0, traceGoal: '',
 };
 
 /* ─── GitHub API ─────────────────────────────────────────────── */
@@ -409,6 +434,8 @@ const ICONS = {
 	sliders:'<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h9M17 17h3"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="17" r="2"/>',
 	plug:'<path d="M9 3.5V7M15 3.5V7"/><path d="M6.5 7h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v4.5"/>',
 	book:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/>',
+	chevL:'<path d="M14 6l-6 6 6 6"/>',
+	chevR:'<path d="M10 6l6 6-6 6"/>',
 };
 const icon = (n, s=18) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]||''}</svg>`;
 const TABS = [
@@ -495,13 +522,65 @@ function standupHtml(d) {
 const KINDS = ['功能','修復','進度','拍板','卡住'];
 const KIND_BADGE = { '功能':'ok', '修復':'accent', '進度':'warn', '拍板':'idle', '卡住':'bad', '其他':'idle' };
 const kindBadge = k => `<span class="badge b-${KIND_BADGE[k]||'idle'}">${esc(k)}</span>`;
+const pad2 = n => String(n).padStart(2, '0');
+const localDateKey = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+function calendarHtml() {
+	const byDate = {};
+	for (const d of S.dailies) {
+		const e = byDate[d.date] || (byDate[d.date] = { red: false });
+		if (d.standup.some(l => /^紅燈[：:]/.test(l))) e.red = true;
+	}
+	const y = S.calY, m = S.calM;
+	const todayKey = localDateKey(new Date());
+	const first = new Date(y, m-1, 1).getDay();
+	const dim = new Date(y, m, 0).getDate();
+	const dimPrev = new Date(y, m-1, 0).getDate();
+	let cells = '';
+	for (let i = 0; i < 42; i++) {
+		const dn = i - first + 1;
+		if (dn < 1 || dn > dim) {
+			cells += `<button class="cal-day out" disabled><span>${dn < 1 ? dimPrev + dn : dn - dim}</span><span class="cd"></span></button>`;
+			continue;
+		}
+		const key = `${y}-${pad2(m)}-${pad2(dn)}`;
+		const e = byDate[key];
+		const cls = ['cal-day', e ? 'has' : '', e && e.red ? 'red' : '',
+			key === S.currentDate ? 'on' : '', key === todayKey ? 'today' : ''].filter(Boolean).join(' ');
+		cells += `<button class="${cls}" data-day="${key}"><span>${dn}</span><span class="cd"></span></button>`;
+	}
+	const yrs = [...new Set([...S.dailies.map(d => +d.date.slice(0,4)), y, +todayKey.slice(0,4)])].sort();
+	const monthCount = Object.keys(byDate).filter(k => k.startsWith(`${y}-${pad2(m)}`)).length;
+	return `<div class="card cal">
+		<div class="cal-head">
+			<button class="cal-nav" id="calPrev" title="上個月">${icon('chevL',14)}</button>
+			<span class="sel">
+				<select id="calYear">${yrs.map(v => `<option ${v===y?'selected':''}>${v}</option>`).join('')}</select>
+				<select id="calMonth">${Array.from({length:12}, (_,i) =>
+					`<option value="${i+1}" ${i+1===m?'selected':''}>${i+1} 月</option>`).join('')}</select>
+			</span>
+			<button class="cal-nav" id="calNext" title="下個月">${icon('chevR',14)}</button>
+		</div>
+		<div class="cal-grid">${['日','一','二','三','四','五','六'].map(w => `<span class="cal-wd">${w}</span>`).join('')}</div>
+		<div class="cal-grid">${cells}</div>
+		<div class="cal-foot">
+			<span>本月 <b class="mono">${monthCount}</b> 天有記錄</span>
+			<span style="margin-left:auto"><button class="btn" id="calToday" style="padding:3px 10px;font-size:11.5px">今天</button></span>
+		</div>
+		<div class="cal-legend">
+			<span><span class="cd" style="background:var(--ok)"></span>有記錄</span>
+			<span><span class="cd" style="background:var(--bad)"></span>含紅燈</span>
+		</div>
+	</div>`;
+}
 function vDaily() {
 	if (!S.dailies.length) return view('<p class="empty">還沒有 daily。</p>');
 	if (!S.currentDate) S.currentDate = S.dailies[0].date;
-	const dates = [...new Set(S.dailies.map(d => d.date))];
-	let h = `<div class="daynav">` + dates.map(dt =>
-		`<button data-date="${dt}" class="${dt===S.currentDate?'on':''}">${dt.slice(5).replace('-','.')}</button>`).join('') + '</div>';
-	for (const d of S.dailies.filter(x => x.date === S.currentDate)) {
+	if (!S.calY) { S.calY = +S.currentDate.slice(0,4); S.calM = +S.currentDate.slice(5,7); }
+	let h = `<div class="dgrid">${calendarHtml()}<div class="dcol">`;
+	const todays = S.dailies.filter(x => x.date === S.currentDate);
+	if (!todays.length)
+		h += `<div class="card" style="text-align:center;color:#8892a0;font-size:12.5px;padding:28px 18px">${esc(S.currentDate)} 沒有記錄 —— 挑個有圓點的日子看看。</div>`;
+	for (const d of todays) {
 		h += `<div class="card"><div class="card-head"><div><div class="t">${esc(d.date)} · ${esc(d.host)}</div>
 			<div class="s mono">${d.metrics.sessions} sessions · ${d.metrics.commits} commits</div></div></div>`;
 		if (d.status === 'no-material') { h += '<p class="empty">這天沒有素材。</p></div>'; continue; }
@@ -510,9 +589,24 @@ function vDaily() {
 		h += detailsHtml(d);
 		h += '</div>';
 	}
+	h += '</div></div>';
 	view(h);
-	$view.querySelectorAll('.daynav button').forEach(b =>
-		b.addEventListener('click', () => { S.currentDate = b.dataset.date; vDaily(); }));
+	const nav = dy => {
+		let m = S.calM + dy, y = S.calY;
+		if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+		S.calM = m; S.calY = y; vDaily();
+	};
+	document.getElementById('calPrev').addEventListener('click', () => nav(-1));
+	document.getElementById('calNext').addEventListener('click', () => nav(1));
+	document.getElementById('calYear').addEventListener('change', e => { S.calY = +e.target.value; vDaily(); });
+	document.getElementById('calMonth').addEventListener('change', e => { S.calM = +e.target.value; vDaily(); });
+	document.getElementById('calToday').addEventListener('click', () => {
+		const t = new Date();
+		S.calY = t.getFullYear(); S.calM = t.getMonth() + 1;
+		S.currentDate = localDateKey(t); vDaily();
+	});
+	$view.querySelectorAll('.cal-day[data-day]').forEach(b =>
+		b.addEventListener('click', () => { S.currentDate = b.dataset.day; vDaily(); }));
 	$view.querySelectorAll('.seg button').forEach(b =>
 		b.addEventListener('click', () => {
 			S.axis = b.dataset.axis; localStorage.setItem(LS.axis, S.axis); vDaily();
