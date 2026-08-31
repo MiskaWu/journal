@@ -25,6 +25,9 @@ journal doctor --check          # 環境自檢，以 exit code 表示
 ```
 
 **控制台**：用瀏覽器開 `console/index.html`（零後端 —— 直連 GitHub API）。
+要常駐就 `journal init --console`：`http://127.0.0.1:8899/` 掛成 systemd user
+service（只綁 127.0.0.1；PAT 的 localStorage 綁 origin，入口固定 token 才不用
+重貼）。`--no-console` 移除，埠號用 `JOURNAL_CONSOLE_PORT` 覆寫。
 總攬燈號、daily 三層瀏覽、目標軌跡、週報，以及**旋鈕面板**：改 `standup_lines`／
 蒸餾模型／排程時間，按儲存就是一個 commit，各機下一輪 pull 生效。首次使用貼一把
 fine-grained PAT（只授權 journal-data 的 Contents），存在瀏覽器本機。

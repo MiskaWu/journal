@@ -53,10 +53,10 @@ JR_HOST_YML="$JR_CONFIG_HOME/host.yml"
 #   data repo（host.yml 記載）    資料與 .spool   init / doctor data  / purge 刪
 #   deploy key ＋ ssh drop-in     provider 憑證   init / selfcheck    / purge 刪
 JR_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-# unit 全集。init 依角色只裝子集（aggregate 兩個只有 aggregator 有），
-# uninstall 一律照全集拆——角色可能改過，殘 unit 每晚會去執行已刪掉的入口。
-JR_UNIT_FILES='journal-rollup.service journal-rollup.timer journal-onfail.service journal-aggregate.service journal-aggregate.timer'
-JR_TIMER_UNITS='journal-rollup.timer journal-aggregate.timer'
+# unit 全集。init 依角色／旗標只裝子集（aggregate 兩個只有 aggregator 有，
+# console 只有跑過 init --console 的機器有），uninstall 一律照全集
+# disable＋拆——角色可能改過，殘 unit 每晚會去執行已刪掉的入口。
+JR_UNIT_FILES='journal-rollup.service journal-rollup.timer journal-onfail.service journal-aggregate.service journal-aggregate.timer journal-console.service'
 
 # 顏色只在 TTY 上開（D17 的同一個精神：背景路徑不要吐控制碼）
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then

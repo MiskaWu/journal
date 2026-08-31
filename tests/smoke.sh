@@ -669,7 +669,7 @@ EOF
 chmod +x "$T/bin/systemctl"
 mkdir -p "$T/home/.config/systemd/user"
 for _u in journal-rollup.service journal-rollup.timer journal-onfail.service \
-          journal-aggregate.service journal-aggregate.timer; do
+          journal-aggregate.service journal-aggregate.timer journal-console.service; do
 	: > "$T/home/.config/systemd/user/$_u"
 done
 env HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config" JR_CONFIG_HOME="$T/cfg" \
@@ -677,12 +677,13 @@ env HOME="$T/home" XDG_CONFIG_HOME="$T/home/.config" JR_CONFIG_HOME="$T/cfg" \
 	PATH="$T/bin:$PATH" "$BIN" uninstall > /dev/null 2>&1
 _left=''
 for _u in journal-rollup.service journal-rollup.timer journal-onfail.service \
-          journal-aggregate.service journal-aggregate.timer; do
+          journal-aggregate.service journal-aggregate.timer journal-console.service; do
 	[ -e "$T/home/.config/systemd/user/$_u" ] && _left="$_left $_u"
 done
-[ -z "$_left" ] && ok 'uninstall 拆光 unit 全集（含 aggregate）' \
-	|| bad 'uninstall 拆光 unit 全集（含 aggregate）' "殘留:$_left"
+[ -z "$_left" ] && ok 'uninstall 拆光 unit 全集（含 aggregate 與 console）' \
+	|| bad 'uninstall 拆光 unit 全集（含 aggregate 與 console）' "殘留:$_left"
 a_grep '  aggregate timer 有被 disable' "$T/systemctl.log" '--user disable --now journal-aggregate.timer'
+a_grep '  console 服務有被 disable' "$T/systemctl.log" '--user disable --now journal-console.service'
 a_grep '  daemon-reload 有跑' "$T/systemctl.log" 'daemon-reload'
 rm -f "$T/bin/systemctl"   # 撤墊片，別讓後面的測試誤以為有可用的 systemctl
 

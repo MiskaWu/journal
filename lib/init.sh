@@ -262,6 +262,42 @@ EOF
 	fi
 }
 
+# 常駐控制台（init --console 的機器才有）：bin/journal-console 靜態伺服
+# console/，只綁 127.0.0.1。常駐的拍板理由同 taskwire task-ui（2026-08-28）：
+# 按需啟動保護不到任何東西，剩下的只有隨時可用這個實在的好處；journal 這邊
+# 再加一條——PAT 的 localStorage 綁 origin，入口固定 token 才不用重貼。
+jr_install_console() {
+	_want=${1:-0}
+	if ! jr_has systemctl || ! systemctl --user show-environment > /dev/null 2>&1; then
+		[ "$_want" = 1 ] && jr_warn 'systemd user bus 不可用，跳過 console 常駐 —— 自行伺服 console/ 目錄'
+		return 0
+	fi
+	if [ "$_want" = 1 ]; then
+		mkdir -p "$JR_UNIT_DIR"
+		cat > "$JR_UNIT_DIR/journal-console.service" <<EOF
+[Unit]
+Description=journal 本機控制台（靜態伺服 console/，只綁 127.0.0.1）
+
+[Service]
+ExecStart=$JR_ROOT/bin/journal-console
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+		systemctl --user daemon-reload
+		systemctl --user enable --now journal-console.service > /dev/null 2>&1 \
+			&& jr_ok "console 常駐已啟用：http://127.0.0.1:${JOURNAL_CONSOLE_PORT:-8899}/" \
+			|| jr_warn 'console enable 失敗 —— systemctl --user enable --now journal-console 手動跑一次看錯誤'
+	elif [ -f "$JR_UNIT_DIR/journal-console.service" ]; then
+		systemctl --user disable --now journal-console.service > /dev/null 2>&1
+		rm -f "$JR_UNIT_DIR/journal-console.service"
+		systemctl --user daemon-reload
+		jr_ok 'console 常駐已移除'
+	fi
+}
+
 jr_cmd_init() {
 	_local=0
 	_host_id=''
@@ -269,6 +305,7 @@ jr_cmd_init() {
 	_remote=''
 	_role=''
 	_force=0
+	_console=''
 	while [ $# -gt 0 ]; do
 		case $1 in
 			--local)          _local=1 ;;
@@ -277,6 +314,8 @@ jr_cmd_init() {
 			--data-remote)    shift; _remote=${1:-} ;;
 			--role)           shift; _role=${1:-node} ;;
 			--force-takeover) _force=1 ;;
+			--console)        _console=1 ;;
+			--no-console)     _console=0 ;;
 			-*)               jr_die "init: 未知選項 $1" ;;
 		esac
 		shift
@@ -329,6 +368,7 @@ jr_cmd_init() {
 	mkdir -p "$JR_CONFIG_HOME"
 	_created=$(jr_yaml_get "$JR_HOST_YML" created_at "$(jr_now_iso)")
 	[ -z "$_role" ] && _role=$(jr_yaml_get "$JR_HOST_YML" role node)
+	[ -z "$_console" ] && _console=$(jr_yaml_get "$JR_HOST_YML" console 0)
 	jr_backup "$JR_HOST_YML"
 	cat > "$JR_HOST_YML" <<EOF
 # journal 本機身分 —— 不入庫
@@ -336,6 +376,7 @@ host: $_host_id
 code_dir: $JR_ROOT
 data_dir: $_data_dir
 role: $_role
+console: $_console
 created_at: $_created
 EOF
 	jr_ok "本機身分：$JR_HOST_YML（host=$_host_id, role=$_role）"
@@ -379,6 +420,7 @@ EOF
 	# 11) agent：SessionEnd hook + 夜間 timer（步驟 9）
 	jr_install_hook || true
 	jr_install_timer || true
+	jr_install_console "$_console" || true
 
 	# 12) 端到端自檢（步驟 11）—— 有 remote 才跑得了
 	if [ "$_local" -ne 1 ]; then
