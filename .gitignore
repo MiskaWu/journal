@@ -2,6 +2,12 @@
 .spool/
 *.log
 
+# console 的建置產物（make console 可重建）
+/bin/journal-console
+console/web/node_modules/
+console/web/dist/
+console/server/dist/
+
 # 本機身分與憑證（絕不入庫）
 host.yml
 *.pem

@@ -272,6 +272,10 @@ jr_install_console() {
 		[ "$_want" = 1 ] && jr_warn 'systemd user bus 不可用，跳過 console 常駐 —— 自行伺服 console/ 目錄'
 		return 0
 	fi
+	if [ "$_want" = 1 ] && [ ! -x "$JR_ROOT/bin/journal-console" ]; then
+		jr_warn 'bin/journal-console 還沒建置 —— 在程式碼 repo 跑 make console（需 go 與 npm）後重跑 init --console'
+		return 0
+	fi
 	if [ "$_want" = 1 ]; then
 		mkdir -p "$JR_UNIT_DIR"
 		cat > "$JR_UNIT_DIR/journal-console.service" <<EOF
