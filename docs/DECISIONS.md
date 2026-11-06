@@ -5,13 +5,13 @@
 | # | 決策 | 選了什麼 | 為什麼 |
 |---|---|---|---|
 | **D1** | 素材深度 | Transcript + git | 只看 git commit 會漏掉「討論／決定／調查」這種沒 commit 的工作。代價是要做機密洗滌。 |
-| **D2** | 落腳處 | 獨立 repo,與 shared 脫鉤 | 不違反 共用環境的規範、不撐大共用 repo。純文字。 |
+| **D2** | 落腳處 | 獨立 repo | 跟其他專案的歷史互不影響。純文字。 |
 | **D3** | 範圍 | 一次做到目標追蹤 | 使用者要「驗證離目標多遠」,含 `GOALS.md` + SLI 燃盡。 |
 | **D4** | 觸發 | 三層 cadence(即時／夜間／聚合) | 單一夜間 rollup 的損失窗口是 24 小時,且在 WSL2 上可能整天不觸發。 |
 | **D5** | 骨幹模型 | 可觀測性(log／trace／metric + SLI + staleness) | 只借概念,不搬重機械。人類尺度每天幾十筆,text + git + 一次 LLM 就是整個平台。 |
 | **D6** | 中心形態 | git origin + 指定 aggregator + 靜態頁,**不架資料庫** | 中心真正稀缺的是「唯一的聚合權責」,不是一顆 DB。業界對應物是 Prometheus rule evaluator／Alertmanager,不是後端儲存。 |
 | **D7** | 防遺失機制 | 縮短蒸餾窗口,**不複寫原始資料** | spool 存的是*指標*;機器死了指標指向的 transcript 也死,同步指標防護力接近零。要真防機器損毀得同步*內容* = 2–4 GB/年。業界對主機損毀一律接受遺失,只以秒級 flush 縮短窗口。 |
-| **D8** | `progress.md` 擁有權 | 僅 aggregator 可寫 | 否則多機互相覆寫;更糟的是看不見 共用服務的機器會把 probe 結果覆蓋成 `na`。 |
+| **D8** | `progress.md` 擁有權 | 僅 aggregator 可寫 | 否則多機互相覆寫;更糟的是看不見某些服務的機器會把 probe 結果覆蓋成 `na`。 |
 | **D9** | spool 是否入庫 | gitignore,不入庫 | 指標含本機絕對路徑,對別台機器毫無意義。 |
 | **D10** | runtime 依賴 | **無硬性 runtime 依賴** —— 三層,有就用、沒有就降級 | 使用者明確表示無法保證任何機器裝了什麼。只把 `sh`／`git`／`claude` 當硬依賴,JSON 減量退化為加速器。 |
 | **D11** | timer 韌性 | 一律 `Persistent=true` | WSL2 關機期間錯過的排程要能在下次啟動補跑。 |
@@ -30,8 +30,8 @@
 
 | # | 問題 | 預設 |
 |---|---|---|
-| **O3** | `GOALS.md` 是否從 `/path/to/shared/docs/decisions.md` 待辦段 + `runbook.md` 播草稿? | 是。**只能在 常開機執行**,dev 機看不到那些檔。 |
-| **O5** | aggregator 指定哪台? | **2026-07-31 定案:留在個人 dev 機**。原設計屬意 常開機(24/7),但納管時使用者釐清:**那台機器不是個人的,工作與資料才是** —— 聚合權責與 progress 的擁有權應留在個人機器;shared 只當回報 node。未來遷往個人的可靠環境時,一行 `journal init --role aggregator --force-takeover` 接手。同時只能有一台。 |
+| **O3** | `GOALS.md` 是否從既有的待辦文件播草稿? | 是。**只能在看得到那些檔案的機器執行**。 |
+| **O5** | aggregator 指定哪台? | **2026-07-31 定案:留在個人 dev 機**。聚合權責與 progress 的擁有權應留在個人機器,其他機器只當回報 node。未來遷往個人的可靠環境時,一行 `journal init --role aggregator --force-takeover` 接手。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議在 `~/.claude/settings.json` 加 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,不代為決定。 |
 | **O8** | 程式碼 repo 要不要公開? | ~~預設私有~~ → **已實質定案為公開**(2026-07-29 推上 GitHub 時使用者建為 public repo)。 |
 | **O9** | **中心 web 的可控旋鈕怎麼實作?** | 需求(2026-07-29 使用者明示):今天引入的可控項 —— `standup_lines`(早會力度)、`model_rollup`/`model_capture`(蒸餾模型)、`rollup_time`(整併時間)、摘要分組軸、價值門檻(未來)—— **都要能從中心 web 調整**,之後新增的旋鈕一律比照。分兩類:**檢視類**(分組軸、展開狀態)純前端 localStorage 即可,零張力;**生成類**(`standup_lines`、門檻)要寫回資料 repo 的 `config.yml`,與鐵律 4(不建控制平面)有張力。**2026-07-30 拍板:GitHub API 直連、零後端**(`console/index.html`)—— 瀏覽器用 fine-grained PAT(只授權 journal-data 的 Contents:RW)直讀 status/hosts/daily 即時渲染總攬,改旋鈕 = 頁面代打一個 commit 到 config.yml,各機下一輪 pull 生效。不架任何服務,鐵律 4 完好;PAT 只存使用者瀏覽器 localStorage。使用者原話:「目前的報告也太像報告」—— 要的是駕駛艙不是文件,靜態 render 頁降級為無 PAT 時的唯讀備援。 |

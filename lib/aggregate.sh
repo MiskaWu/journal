@@ -2,7 +2,7 @@
 # lib/aggregate.sh —— L3 中心層：aggregate / trace / digest
 #
 # 中心真正稀缺的是「唯一的聚合權責」，不是一顆 DB（D6）。**只有 aggregator
-# 能寫 progress.md** —— 否則看不見 共用服務的機器會把真實結果覆蓋成 na
+# 能寫 progress.md** —— 否則看不見某些服務的機器會把真實結果覆蓋成 na
 # （§7 那個真 bug）。合成規則：每個 goal 取所有 host 中**最新的非 na** 結果；
 # 全部 na → 標 unchecked，**不得誤報成 fail**。
 

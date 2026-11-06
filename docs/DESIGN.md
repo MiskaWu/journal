@@ -2,7 +2,7 @@
 
 > **這份文件是什麼**:`journal` 的完整設計。給接手實作的 Claude 對話當**唯一 source of truth** —— 不需要原規劃對話的上下文。
 >
-> **狀態**:設計已定案,3 項待拍板(§4)。程式碼**尚未動工**。
+> **狀態**:P1–P5 全部完成並持續使用中。尚待拍板的事項見 [DECISIONS.md](DECISIONS.md)。
 >
 > 決策的完整理由見 [DECISIONS.md](DECISIONS.md)。本檔講的是「要蓋成什麼樣」。
 
@@ -10,7 +10,7 @@
 
 ## §0 六條鐵律(先讀)
 
-1. **journal 不是 shared。** 它是**個人、home-scoped、免 root** 的工具,與 `/path/to/shared` 完全分開。不套用 shared 的 ansible / `make` / 系統層級服務 慣例,不碰共用 repo。shared 的 `CLAUDE.md` 憲法**不適用**於本工具 —— 本檔就是 journal 的規則。
+1. **journal 是個人工具。** 它是**個人、home-scoped、免 root** 的工具,不依賴任何機器上的共用服務,也不套用系統層級的部署慣例。本檔就是 journal 的規則。
 
 2. **它是「觀察 host + 你的 home」的工具。** 凡遇「要不要隔離」的直覺都反過來想:它天生需要看得到 host 狀態與 `~/.claude`。
 
@@ -26,7 +26,7 @@
 
 ## §1 需求
 
-> 「我會在各種地方使用 claude(這台 常開主機、本地開發機…等),想**統整每天完成的事情的摘要讓我回憶**;如果能**驗證我離目標還有多遠**更好。」
+> 「我會在各種地方使用 claude(常開主機、本地開發機…等),想**統整每天完成的事情的摘要讓我回憶**;如果能**驗證我離目標還有多遠**更好。」
 
 | | 能力 | 落在哪 |
 |---|---|---|
@@ -61,13 +61,7 @@
 | python3 | ✅ 可用(但**不得假設別台也有**) |
 | node / perl | ❓ 未測 |
 | jq / gh | ❌ 未安裝 |
-| `/path/to/shared` | ❌ **不存在於本機** |
 | git identity | MiskaWu / miskawu@hotmail.com |
-| 既有 ssh key | `id_ed25519_dev`、`id_ed25519_dev` |
-
-### 常開機(hostname 待補)
-
-24/7 常開 → **指定為 aggregator**。持有 `/path/to/shared`、`docs/decisions.md`、`runbook.md`、反向代理。**runtime 全未驗證**,由 `journal doctor` 現場產出。
 
 ### transcript 實測數據(整個設計的地基)
 
@@ -109,8 +103,8 @@
 
 | # | 問題 | 預設 |
 |---|---|---|
-| **O3** | `GOALS.md` 是否從 `/path/to/shared/docs/decisions.md` 待辦段 + `runbook.md` 播草稿? | 是。**只能在 常開機執行**。 |
-| **O5** | aggregator 指定哪台? | 常開機。**明確排除 dev 機**。同時只能有一台。 |
+| **O3** | `GOALS.md` 是否從既有的待辦文件播草稿? | 是。**只能在看得到那些檔案的機器執行**。 |
+| **O5** | aggregator 指定哪台? | 個人 dev 機。同時只能有一台。 |
 | **O7** | 是否調高 transcript 保留期? | 建議 `"cleanupPeriodDays": 365`。改的是使用者個人設定檔,**不代為決定**。 |
 | **O8** | **程式碼 repo 要不要公開?** | **已定案:公開**(2026-07-29 推上 GitHub)。bootstrap 因此變 trivial。 |
 | **O9** | **中心 web 的可控旋鈕**(P5) | 使用者需求:`standup_lines`、摘要分組軸、價值門檻等可控項**都要能從中心 web 調**。檢視類走前端;生成類要寫回 `config.yml` —— 預設傾向「中心頁直連 git provider 的檔案編輯頁」,零新服務不違鐵律 4。細節見 DECISIONS O9。 |
@@ -200,8 +194,8 @@ L1 送出去的是**已蒸餾、已過機密 gate** 的 markdown,不是原始 tr
 | 構件 | 是什麼 | 誰能寫 |
 |---|---|---|
 | 資料中心 | `journal-data` 的 origin | 每台機器,但**只寫自己 host 命名的檔** |
-| 聚合者 | 指定一台常開機器(預設 shared,O5) | **唯一能寫 `progress.md`** |
-| 檢視面 | `web/progress.html`,掛反向代理 | 由 aggregator 的 `journal render` 產生 |
+| 聚合者 | 指定一台機器(預設個人 dev 機,O5) | **唯一能寫 `progress.md`** |
+| 檢視面 | `web/progress.html`,掛在反向代理後面 | 由 aggregator 的 `journal render` 產生 |
 
 ### 權責規則(必須照做)
 
@@ -212,7 +206,7 @@ L1 送出去的是**已蒸餾、已過機密 gate** 的 markdown,不是原始 tr
 5. push 前一律 `git pull --rebase`。因為寫入的檔都帶 host 前綴,rebase 永遠乾淨。衝突**不自動硬解**。
 6. aggregator 另讀 `hosts/*.yml` 的 `last_seen` 與 `agent_health`,區分沉默與不健康(§10)。
 
-> **這修掉的是一個真 bug**:早期設計讓 `daily/…__<host>.md` 帶 host 前綴,**但 `progress.md` 沒有前綴、每次覆寫、又沒指定誰負責寫**。後果是兩台同時 push 就衝突;更糟的是 dev 機看不見 shared 的服務,它的 probe 全是 `na`,一 push 就把**看得見的那台的真實結果覆蓋掉**。
+> **這修掉的是一個真 bug**:早期設計讓 `daily/…__<host>.md` 帶 host 前綴,**但 `progress.md` 沒有前綴、每次覆寫、又沒指定誰負責寫**。後果是兩台同時 push 就衝突;更糟的是 dev 機看不見另一台的服務,它的 probe 全是 `na`,一 push 就把**看得見的那台的真實結果覆蓋掉**。
 
 ---
 
@@ -458,7 +452,7 @@ generated_by: rollup        # rollup（L2 定稿）| capture（L1 即時碎片�
 reduced_by: awk             # node | python3 | awk
 ---
 ## 摘要
-- shared | 功能 | ci-runner | runner 骨架完成並可註冊
+- ops | 功能 | ci-runner | runner 骨架完成並可註冊
 ## 完成
 - ci-runner 骨架 + wiring（commit 0fa72f5）
 ## 拍板
@@ -478,7 +472,7 @@ checked_at: 2026-07-27T23:10:04+08:00
 agent_health: ok            # ok | degraded | fail
 degraded_reason: ""
 results:
-  rollout-check:   { state: partial, kind: checklist, detail: "4/6" }
+  rollout-check: { state: partial, kind: checklist, detail: "4/6" }
   edge-tls:    { state: na,      kind: probe, detail: "此機無法觸及該端點" }
 ```
 
@@ -558,7 +552,7 @@ last_seen: 2026-07-27T23:40:12+08:00
 
 1. **session 指標捕捉(L1 入口)** —— `hooks/session-end.sh` append 一行進 `.spool/`,背景觸發 `journal capture` 後**立刻返回**。⚠ **動手前先確認當時 Claude Code 版本的 `SessionEnd` hook 名稱與 payload 欄位**,別照抄本檔假設。
 2. **transcript 擷取** —— 優先讀 spool 指到的檔;缺漏時 fallback 到 glob `~/.claude/projects/*/*.jsonl`,依 `timestamp`(本機 local date)切出當天。
-   > ⚠ **同一邏輯 repo 會有多個 slug**:實測本機 7 個,`dev-env-ansible` 就散成本體加三個 `--claude-worktrees-*`;常開機另有 `-home-user-shared` 與 `-path-to-shared`(repo 搬過家)。`config.yml` 必須把 slug 映回邏輯專案,**別漏、別重複計**。L1 路徑天生免疫 —— hook 當下就知道真正的 `cwd`。
+   > ⚠ **同一邏輯 repo 會有多個 slug**:實測本機 7 個,`dev-env-ansible` 就散成本體加三個 `--claude-worktrees-*`;repo 搬過家時也會多出 slug。`config.yml` 必須把 slug 映回邏輯專案,**別漏、別重複計**。L1 路徑天生免疫 —— hook 當下就知道真正的 `cwd`。
 3. **減量** —— 依 §9 階梯選路徑,把 `reduced_by` 寫進 frontmatter。
 4. **git 擷取** —— 對 `config.yml` 列的 repo 跑 `git log --since … --until … --stat`。
 5. **生成** —— 丟給本機的 `claude -p`(headless,用 host 已登入的憑證),**包逾時**,固定 prompt → 產 frontmatter + 四段 prose。
@@ -570,7 +564,7 @@ last_seen: 2026-07-27T23:40:12+08:00
 ### 機密處理:兩道防線
 
 1. 生成 prompt 明令「不得抄任何機密 / token / 密碼」。
-2. **產出後 gate** —— 讀 `/path/to/shared/secrets.yml`(若存在)裡的**值**,加常見 pattern(`glpat-`、`AKIA…`、`sk-…`、長 hex/base64),掃剛生成的 daily 檔;命中就 **redact-and-keep**(替換成 `«REDACTED»` 保留摘要並印警告,比整篇拒收好用)。
+2. **產出後 gate** —— 讀 `secrets_file` 指向的檔案(若存在)裡的**值**,加常見 pattern(`glpat-`、`AKIA…`、`sk-…`、長 hex/base64),掃剛生成的 daily 檔;命中就 **redact-and-keep**(替換成 `«REDACTED»` 保留摘要並印警告,比整篇拒收好用)。
 
 > **gate 必須在 L1 與 L2 都跑。** L1 會 push,所以**不能**「先推上去、晚上再洗」—— 遠端一旦收過機密,git 歷史就洗不乾淨了。
 
@@ -596,9 +590,9 @@ last_seen: 2026-07-27T23:40:12+08:00
 
 ### P3 · 目標 / SLI
 
-`GOALS.md` 播種(O3,**須在 常開機做**)+ `check` + `status/<host>.yml`。
+`GOALS.md` 播種(O3,**須在看得到來源檔案的機器做**)+ `check` + `status/<host>.yml`。
 
-**驗收**:常開機對 `rollout-check` 吐 `checklist 4/6`;dev 機跑同一份 `GOALS.md`,確認那些項**正確標成 `na` 而不是 fail**。
+**驗收**:看得到來源檔案的機器對 `rollout-check` 吐 `checklist 4/6`;dev 機跑同一份 `GOALS.md`,確認那些項**正確標成 `na` 而不是 fail**。
 
 ### P4 · 納管與韌性
 
@@ -610,7 +604,7 @@ last_seen: 2026-07-27T23:40:12+08:00
 
 `aggregate` + `render` + 反向代理 + timer 上線 + `trace` + `digest`。
 
-**驗收**:兩台各推一天資料,`progress.md` **同時反映兩台且無衝突**;反向代理 網址看得到;**停掉 dev 機三天確認出現 host staleness**;**故意讓一台降級跑,確認標出 degraded 而不是當成正常**;dev 機關機一天後再開確認 `Persistent=true` 補跑;`trace rollout-check` 串得出跨天跨機的線。
+**驗收**:兩台各推一天資料,`progress.md` **同時反映兩台且無衝突**;靜態頁網址看得到;**停掉 dev 機三天確認出現 host staleness**;**故意讓一台降級跑,確認標出 degraded 而不是當成正常**;dev 機關機一天後再開確認 `Persistent=true` 補跑;`trace rollout-check` 串得出跨天跨機的線。
 
 ---
 
@@ -618,7 +612,7 @@ last_seen: 2026-07-27T23:40:12+08:00
 
 1. 讀完本檔(§0 六條鐵律 + §2 環境實況 + §4 待拍板 + §9 依賴策略)與 [DECISIONS.md](DECISIONS.md)。
 2. 確認 O3/O5/O7/O8(沒答就用預設,並**明講採了哪個預設**)。
-3. **先確認你在哪台機器上**。`hostname` 若是 `dev-box`,你在 dev 機:`/path/to/shared` 不存在,O3 播種**做不到**,shared 專屬 probe 應為 `na`。
+3. **先確認你在哪台機器上**。用 `journal doctor` 看本機能力:`requires` 指的路徑不存在時,O3 播種**做不到**,相關 probe 應為 `na`。
 4. **動手前先跑一次環境盤點** —— 有哪些 runtime?這決定先寫哪條減量路徑。但**無論如何 awk 保底路徑一定要有**,它才是正確性的基準。
 5. 從 **P1** 開始,做完就地驗收再進下一階段。**P2 前先查清 `SessionEnd` hook 的名稱與 payload。**
 

@@ -498,7 +498,7 @@ cat > "$T/data/GOALS.md" <<EOF
   sli: { kind: manual }
   done-when: 人工登入後驗證
 - id: g-na
-  title: 只有 常開機看得到
+  title: 只有特定機器看得到
   sli: { kind: probe, cmd: "true" }
   requires: { paths: ["/nonexistent/shared"] }
 
@@ -691,7 +691,7 @@ rm -f "$T/bin/systemctl"   # 撤墊片，別讓後面的測試誤以為有可用
 
 printf '\n== 10 · 中心 ==\n'
 
-# 佈景：第二台機器 hostb（shared 角色的模擬）——
+# 佈景：第二台機器 hostb（第二台機器的模擬）——
 #   rollout 目標：hosta（本機 testhost）的 na 比 hostb 的 partial「新」，
 #   優勝者仍必須是 hostb 的 partial —— na 永遠選不上
 cat > "$T/data/status/hostb.yml" <<'EOF'
@@ -708,7 +708,7 @@ EOF
 rm -f "$T/data/status/testhost.yml.extra"
 # 本機 status 補 rollout 的 na（較新）與 all-na-goal 的 na
 cat >> "$T/data/status/testhost.yml" <<'EOF'
-  rollout: { state: na, kind: checklist, detail: "此機看不到 /path/to/shared" }
+  rollout: { state: na, kind: checklist, detail: "此機看不到 /nonexistent/shared" }
   all-na-goal: { state: na, kind: probe, detail: "此機也看不到" }
 EOF
 cat > "$T/data/hosts/hostb.yml" <<'EOF'
@@ -793,7 +793,7 @@ a_grep '週報檔落地' "$WEEKF" '## 本週主線'
 a_grep '  frontmatter 有週起點' "$WEEKF" 'week_start: 2026-07-13'
 a_grep 'progress 指令可讀' "$PROG" '# progress'
 
-# ================================================================ 11 · 第二台機器（shared 模擬）
+# ================================================================ 11 · 第二台機器（模擬）
 
 printf '\n== 11 · 第二台機器 ==\n'
 

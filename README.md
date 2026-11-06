@@ -9,8 +9,8 @@
 | 項目 | 狀態 |
 |---|---|
 | 設計 | 已定案(v5),見 [`docs/DESIGN.md`](docs/DESIGN.md) —— **本 repo 自足,不需外部連結** |
-| 實作 | **P1–P5 全部完成**:log 層、即時層、目標/SLI、納管、中心(aggregate/render/trace/digest)。多機驗收待第二台機器納管 |
-| 待拍板 | O3(GOALS 播種,常開機納管時做)· O7(transcript 保留期)。O5=shared(dev 暫代)、O8=公開 已定 |
+| 實作 | **P1–P5 全部完成**:log 層、即時層、目標/SLI、納管、中心(aggregate/render/trace/digest)。第二台機器已納管實測 |
+| 待拍板 | 見 [`docs/DECISIONS.md`](docs/DECISIONS.md) 的「尚待拍板」。O5=個人 dev 機、O8=公開 已定 |
 
 ## 現在能做什麼
 
@@ -36,7 +36,7 @@ fine-grained PAT（只授權 journal-data 的 Contents），存在瀏覽器本�
 
 裝好之後就不用管它:每關一個 Claude session,`SessionEnd` hook 背景蒸餾該
 session 追進當日檔(L1,秒級返回不卡關窗);每晚 timer 重讀全天素材整併定稿
-(L2,`Persistent=true` 錯過補跑)。多機聚合與中心視圖是 P4/P5。
+(L2,`Persistent=true` 錯過補跑)。多機聚合與中心視圖見 P4/P5(`journal aggregate`、`journal render`)。
 
 ## 它解決什麼
 
@@ -51,7 +51,7 @@ session 追進當日檔(L1,秒級返回不卡關窗);每晚 timer 重讀全天�
 | repo | 內容 | 誰能寫 | agent 的憑證 |
 |---|---|---|---|
 | **`journal`**(本 repo) | `bin/` `lib/` `hooks/` `docs/` —— 工具本身 | 只有你,手動 push | **唯讀** |
-| **`journal-data`**(尚未建立) | `daily/` `status/` `hosts/` `progress.md` —— 產出的日誌 | 每台機器自動 push | 可寫,但只限資料 |
+| **`journal-data`**(私有 repo) | `daily/` `status/` `hosts/` `progress.md` —— 產出的日誌 | 每台機器自動 push | 可寫,但只限資料 |
 
 分開的理由不只是歷史乾淨(否則 `git log` 會被每日 rollup 灌爆),更重要的是**爆炸半徑**:自動化流程的憑證只能寫資料,寫不了程式碼。若兩者同一個 repo,任何一台機器的 deploy key 外洩就等於能改 `bin/journal`,而每台機器都會 pull 並執行它。
 
@@ -66,4 +66,8 @@ session 追進當日檔(L1,秒級返回不卡關窗);每晚 timer 重讀全天�
 ## 文件
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) —— 完整設計與交接規格(唯一 source of truth)
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) —— 決策記錄 D1–D18
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) —— 決策記錄 D1–D21
+
+## 授權
+
+[MIT](LICENSE)

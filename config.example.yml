@@ -18,7 +18,7 @@ aggregator: ""
 # 這裡是「即使那天沒在裡面開 session 也要掃」的 repo。
 repos:
   # - ~/projects/journal
-  # - /path/to/shared
+  # - /path/to/another/repo
 
 # 算成「你」的 commit 作者。留空就用各 repo 自己的 git config user.email。
 # 不篩的話，一次 rebase 或 pull 就會把別人的 commit 灌進你的當天。
@@ -31,13 +31,12 @@ git_authors:
 # 本體加四個 `--claude-worktrees-*`。不映射的話同一件事會被當成四個專案。
 # 預設會由 cwd 推 git toplevel，通常已經對；這裡只放推不出來的例外。
 slug_map:
-  # -path-to-shared: shared
-  # -home-user-shared: shared
+  # -path-to-old-location: my-repo
 
 # ---------------------------------------------------------------- 機密 gate
 #
 # 這個檔裡的**值**會被當字面字串掃描並 redact。檔不存在就靜靜跳過。
-secrets_file: /path/to/shared/secrets.yml
+secrets_file: /path/to/secrets.yml
 
 # 額外的 redact pattern（ERE）。內建已涵蓋 glpat- / gh?_ / AKIA / sk- / xox /
 # AIza / JWT / PEM 標頭 / 48+ 位 hex。

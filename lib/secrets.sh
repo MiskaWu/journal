@@ -37,9 +37,9 @@ jr_redact_patterns() {
 	return 0
 }
 
-# 從 secrets 檔撈出**值**（不是 key）。檔不存在就靜靜跳過 —— dev 機沒有 /path/to/shared。
+# 從 secrets 檔撈出**值**（不是 key）。沒設定或檔不存在就靜靜跳過。
 jr_secret_values() {
-	_sf=$(jr_yaml_get "${JR_CONFIG_YML:-}" secrets_file '/path/to/shared/secrets.yml')
+	_sf=$(jr_yaml_get "${JR_CONFIG_YML:-}" secrets_file '')
 	case $_sf in "~/"*) _sf="$HOME/${_sf#\~/}" ;; esac
 	[ -n "$_sf" ] && [ -f "$_sf" ] || return 0
 	awk '
