@@ -4,7 +4,7 @@
 # 全程使用假資料與假 claude，不碰真實環境：
 #   · HOME / JR_CONFIG_HOME / CLAUDE_CONFIG_DIR 全指向 mktemp 目錄
 #   · claude 是 PATH 上的墊片，行為由 CLAUDE_SHIM_MODE 控制
-#     （ok / secret / fail / empty / slow / reject）
+#     （ok / secret / fail / stdout-fail / empty / slow / reject / reject-fail / reject-slow）
 # 硬需求只有 P1 的地板：sh、git、awk。node / python3 在場時會多跑等價比對。
 #
 # 用法： sh tests/smoke.sh
@@ -85,12 +85,17 @@ for a in "$@"; do case $a in --version) echo '9.9.9 (shim)'; exit 0 ;; esac; don
 printf '1\n' >> "${CLAUDE_SHIM_LOG:-/dev/null}"
 [ -n "${CLAUDE_SHIM_ARGLOG:-}" ] && printf '%s\n' "$@" >> "$CLAUDE_SHIM_ARGLOG"
 case "${CLAUDE_SHIM_MODE:-ok}" in
-	reject)
+	reject|reject-fail|reject-slow)
 		# 模擬舊版 claude 不認得 --safe-mode：帶了就立刻吐 usage error
 		for a in "$@"; do case $a in --safe-mode)
 			echo "error: unknown option '--safe-mode'" >&2; exit 1 ;;
 		esac; done
 		cat > /dev/null
+		# 退到 bare 之後的兩種失敗：原因寫在 stdout、或卡到逾時
+		case $CLAUDE_SHIM_MODE in
+			reject-fail) printf 'API Error: 529 overloaded_error\n'; exit 1 ;;
+			reject-slow) sleep 30 ;;
+		esac
 		printf 'goals_touched: bare\n\n## 完成\n- bare 模式完成\n## 拍板\n## 待續\n## 卡住\n' ;;
 	ok)
 		for a in "$@"; do case $a in *週報*)
@@ -116,6 +121,12 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		printf 'goals_touched: proj-a\n\n## 完成\n- token 是 glpat-FAKEFAKEFAKE12345678 值 SuperSecretValue123 另 MYCORP_123456\n## 拍板\n## 待續\n## 卡住\n' ;;
 	empty) cat > /dev/null ;;
 	fail)  cat > /dev/null; echo 'boom' >&2; exit 1 ;;
+	stdout-fail)
+		# 錯誤訊息寫在 stdout、stderr 是空的（API 錯誤、提示太長常見的樣子）；
+		# 夾一個假 token，驗失敗訊息印出前有過機密 gate
+		cat > /dev/null
+		printf 'API Error: 400 prompt is too long glpat-FAKEFAKEFAKE12345678\n'
+		exit 1 ;;
 	slow)  cat > /dev/null; sleep 30 ;;
 esac
 SHIM
@@ -301,25 +312,55 @@ a_grep 'hosts 檔更新 reducer' "$T/data/hosts/testhost.yml" 'reducer: awk'
 # ================================================================ 4 · 失敗路徑
 
 printf '\n== 4 · 失敗路徑 ==\n'
-MODE=fail J rollup 2026-07-15 > /dev/null 2>&1
+# 失敗訊息要帶「真正的」結束碼與原因 —— 只斷言整體 exit 非零是不夠的：
+# jr_claude_run 不管拿到什麼結束碼都回 1，曾經每次失敗都印成「exit 0」、
+# 逾時分支永遠進不去、stdout 的原因被清掉，這幾條測試全都沒發現。
+MODE=fail J rollup 2026-07-15 > "$T/fail.log" 2>&1
 a_nz 'claude 失敗 → exit 非零' $?
 a_grep '  佔位 + generate-failed' "$DAILY" 'status: generate-failed'
 a_grep '  失敗不靜默漏' "$DAILY" '生成失敗'
+a_grep '  訊息帶真正的結束碼' "$T/fail.log" 'claude 失敗（exit 1）'
+a_grep '  stderr 的原因有印出' "$T/fail.log" '[stderr] boom'
 
-MODE=empty J rollup 2026-07-15 > /dev/null 2>&1
+MODE=stdout-fail J rollup 2026-07-15 > "$T/stdout-fail.log" 2>&1
+a_nz '原因寫在 stdout 的失敗 → exit 非零' $?
+a_grep '  訊息帶真正的結束碼' "$T/stdout-fail.log" 'claude 失敗（exit 1）'
+a_grep '  stdout 的原因在清空前印出' "$T/stdout-fail.log" '[stdout] API Error: 400 prompt is too long'
+a_grep '  印出前過機密 gate' "$T/stdout-fail.log" '«REDACTED»'
+a_ngrep '  假 token 沒有漏到日誌' "$T/stdout-fail.log" 'glpat-FAKEFAKEFAKE12345678'
+a_grep '  佔位 + generate-failed' "$DAILY" 'status: generate-failed'
+
+MODE=empty J rollup 2026-07-15 > "$T/empty.log" 2>&1
 a_nz 'claude 回空 → exit 非零' $?
 a_grep '  空輸出也標 generate-failed' "$DAILY" 'status: generate-failed'
+a_grep '  訊息講明是空字串' "$T/empty.log" 'claude 回了空字串'
 
 t0=$(date +%s)
-MODE=slow TOUT=2 J rollup 2026-07-15 > /dev/null 2>&1
+MODE=slow TOUT=2 J rollup 2026-07-15 > "$T/slow.log" 2>&1
 rc=$?
 t1=$(date +%s)
 a_nz 'claude 逾時 → exit 非零' $rc
 [ $((t1 - t0)) -lt 15 ] && ok '  逾時真的有踢掉（<15s）' || bad '  逾時真的有踢掉' "花了 $((t1 - t0))s"
+a_grep '  訊息講明是逾時' "$T/slow.log" 'claude 逾時（2s）'
+a_ngrep '  逾時不被當成一般失敗' "$T/slow.log" 'claude 失敗（exit'
 
 MODE=reject J rollup 2026-07-15 > "$T/reject.log" 2>&1
 a_rc '旗標被拒 → 退最小旗標重試成功' $? 0
 a_grep '  bare 模式的內容有落地' "$DAILY" 'bare 模式完成'
+a_grep '  退化前有警告' "$T/reject.log" '不吃某個旗標'
+
+MODE=reject-fail J rollup 2026-07-15 > "$T/reject-fail.log" 2>&1
+a_nz '退到 bare 後仍失敗 → exit 非零' $?
+a_grep '  bare 失敗帶真正的結束碼' "$T/reject-fail.log" '最小旗標也失敗（exit 1）'
+a_grep '  bare 的 stdout 原因有印出' "$T/reject-fail.log" '[stdout] API Error: 529 overloaded_error'
+
+MODE=reject-slow TOUT=2 J rollup 2026-07-15 > "$T/reject-slow.log" 2>&1
+a_nz '退到 bare 後逾時 → exit 非零' $?
+a_grep '  bare 逾時講明是逾時' "$T/reject-slow.log" '最小旗標也逾時（2s）'
+
+for _f in fail stdout-fail slow reject-fail reject-slow; do
+	a_ngrep "  $_f：不再把失敗印成 exit 0" "$T/$_f.log" '（exit 0）'
+done
 
 MODE=ok RED=awk J rollup 2026-07-15 > /dev/null 2>&1
 a_rc '失敗後補跑恢復 ok' $? 0

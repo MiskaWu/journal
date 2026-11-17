@@ -61,35 +61,64 @@ jr_flag_rejected() {
 	grep -qi -e 'unknown option' -e 'unknown argument' -e "error: option" -e 'Usage:' "$1"
 }
 
+# jr_claude_dump OUTFILE ERRFILE —— 失敗時把 claude 兩個輸出口的開頭印到 stderr
+#
+# ⚠ 兩個口都要看。`claude -p --output-format text` 失敗時，API 錯誤、用量上限、
+#   提示太長這類訊息常寫在 stdout（＝OUTFILE），stderr 是空的。只印 stderr 的話
+#   日誌裡只剩一行「失敗」，原因跟著 OUTFILE 一起被清掉（2026-11-13 起夜間整併
+#   連四晚兩秒就失敗，日誌只留「exit 0」一行）。
+# 印之前先過機密 gate：stdout 可能是半截的模型輸出，會抄到素材裡的東西。
+# jr_redact 會改一堆全域暫存變數，包在 subshell 裡免得踩到呼叫端。
+jr_claude_dump() {
+	_dtmp="$JR_TMPDIR/claude.dump"
+	for _dch in stdout stderr; do
+		if [ "$_dch" = 'stdout' ]; then _dsrc=$1; else _dsrc=$2; fi
+		[ -s "$_dsrc" ] || continue
+		sed -n '1,10p' "$_dsrc" > "$_dtmp"
+		( jr_redact "$_dtmp" > /dev/null )
+		sed "s/^/   [$_dch] /" "$_dtmp" >&2
+	done
+	rm -f "$_dtmp"
+}
+
 # jr_claude_run SYSFILE PROMPT INFILE OUTFILE ERRFILE TIMEOUT
 # 完整旗標先上，被拒才退 bare —— L2 的日蒸餾與 L1 的 capture 共用這一條。
-# 成功且有輸出回 0；其餘一律回 1 且 OUTFILE 清空。
+# 成功且有輸出回 0；其餘一律回 1 且 OUTFILE 清空（清空前先把兩個口的開頭印出來）。
+#
+# ⚠ 結束碼一律用 `cmd || _rc=$?` 接。`if cmd; then …; fi` 之後的 $? 是整個 if
+#   敘述的狀態（條件不成立又沒有 else 時是 0），不是 cmd 的 —— 曾因此把每次失敗
+#   都印成「exit 0」，逾時 124 的分支也永遠進不去。
 jr_claude_run() {
 	_rsys=$1; _rpr=$2; _rin=$3; _rout=$4; _rerr=$5; _rto=$6
 	# 遞迴保護：bare 模式不帶 --safe-mode，hooks 不會被跳過 ——
 	# SessionEnd hook 看到這個變數就直接退出，蒸餾不會再觸發 capture
 	export JOURNAL_IN_CAPTURE=1
 
-	if jr_claude_try full "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr"; then
-		[ -s "$_rout" ] && return 0
-		jr_err 'claude 回了空字串'
-		: > "$_rout"
-		return 1
-	fi
-	_rc=$?
+	_rc=0
+	jr_claude_try full "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr" || _rc=$?
 
-	if [ "$_rc" -eq 124 ]; then
+	if [ "$_rc" -eq 0 ]; then
+		[ -s "$_rout" ] && return 0
+		jr_err 'claude 回了空字串（exit 0）'
+	elif [ "$_rc" -eq 124 ]; then
 		jr_err "claude 逾時（${_rto}s）"
 	elif jr_flag_rejected "$_rerr"; then
 		jr_warn "這個 claude 版本不吃某個旗標，退到最小旗標重試（$(sed -n 1p "$_rerr")）"
-		if jr_claude_try bare "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr"; then
-			[ -s "$_rout" ] && { jr_warn '已用最小旗標完成 —— 注意：這次會留下自己的 transcript'; return 0; }
+		_rc=0
+		jr_claude_try bare "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr" || _rc=$?
+		if [ "$_rc" -eq 0 ] && [ -s "$_rout" ]; then
+			jr_warn '已用最小旗標完成 —— 注意：這次會留下自己的 transcript'
+			return 0
 		fi
-		jr_err '最小旗標也失敗'
+		case $_rc in
+			0)   jr_err '最小旗標回了空字串（exit 0）' ;;
+			124) jr_err "最小旗標也逾時（${_rto}s）" ;;
+			*)   jr_err "最小旗標也失敗（exit $_rc）" ;;
+		esac
 	else
 		jr_err "claude 失敗（exit $_rc）"
 	fi
-	[ -s "$_rerr" ] && sed -n '1,10p' "$_rerr" >&2
+	jr_claude_dump "$_rout" "$_rerr"
 	: > "$_rout"
 	return 1
 }
