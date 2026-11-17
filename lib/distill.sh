@@ -61,29 +61,43 @@ jr_flag_rejected() {
 	grep -qi -e 'unknown option' -e 'unknown argument' -e "error: option" -e 'Usage:' "$1"
 }
 
-# jr_claude_dump OUTFILE ERRFILE —— 失敗時把 claude 兩個輸出口的開頭印到 stderr
+# jr_claude_fail HEADLINE OUTFILE ERRFILE —— 呼叫 claude 失敗的唯一出口（D22）
+#
+# 組出一行原因放進 JR_CLAUDE_FAIL，用**同一行字**印到 stderr（timer 路徑會進
+# systemd journal），再附上兩個口各前 10 行。呼叫端把 JR_CLAUDE_FAIL 原樣寫進
+# 自己留下來的紀錄（rollup 的日誌檔佔位、judge 的 detail）—— 紀錄裡的失敗和
+# 實際發生的失敗是同一行字，沒有各寫各的空間。
+#
+# JR_CLAUDE_FAIL 的約定：一行；過了機密 gate；原因段最多 200 位元組且不切半個字；
+# 不含雙引號、反斜線與控制字元（雙引號換成單引號）—— 要能原樣塞進 status 的
+# YAML 雙引號字串。aggregate 與 console 解析 detail 都是讀到下一個 `"` 為止，
+# 跳脫過的引號一樣會截斷，所以在源頭清掉，不靠各寫入端記得跳脫。
 #
 # ⚠ 兩個口都要看。`claude -p --output-format text` 失敗時，API 錯誤、用量上限、
-#   提示太長這類訊息常寫在 stdout（＝OUTFILE），stderr 是空的。只印 stderr 的話
-#   日誌裡只剩一行「失敗」，原因跟著 OUTFILE 一起被清掉（2026-11-13 起夜間整併
-#   連四晚兩秒就失敗，日誌只留「exit 0」一行）。
-# 印之前先過機密 gate：stdout 可能是半截的模型輸出，會抄到素材裡的東西。
-# jr_redact 會改一堆全域暫存變數，包在 subshell 裡免得踩到呼叫端。
-jr_claude_dump() {
-	_dtmp="$JR_TMPDIR/claude.dump"
-	for _dch in stdout stderr; do
-		if [ "$_dch" = 'stdout' ]; then _dsrc=$1; else _dsrc=$2; fi
-		[ -s "$_dsrc" ] || continue
-		sed -n '1,10p' "$_dsrc" > "$_dtmp"
-		( jr_redact "$_dtmp" > /dev/null )
-		sed "s/^/   [$_dch] /" "$_dtmp" >&2
-	done
-	rm -f "$_dtmp"
+#   提示太長這類訊息常寫在 stdout（＝OUTFILE），stderr 是空的。只看 stderr 的話
+#   原因跟著 OUTFILE 一起被清掉（2026-11-13 起夜間整併連四晚兩秒就失敗，
+#   日誌只留「exit 0」一行）。原因取第一個有字的行，stdout 優先。
+# 先過機密 gate 才印、才組原因：stdout 可能是半截的模型輸出，會抄到素材裡的東西，
+# 而日誌檔與 status 會被 push。jr_redact 會改一堆全域暫存變數，包在 subshell 裡。
+jr_claude_fail() {
+	_fo="$JR_TMPDIR/claude.fail.stdout"; _fe="$JR_TMPDIR/claude.fail.stderr"
+	sed -n '1,10p' "$2" > "$_fo" 2>/dev/null
+	sed -n '1,10p' "$3" > "$_fe" 2>/dev/null
+	( jr_redact "$_fo" > /dev/null; jr_redact "$_fe" > /dev/null )
+	_fwhy=$(cat "$_fo" "$_fe" | tr '\t"' " '" | tr -d '\\\000-\010\013-\037' \
+		| awk 'NF { sub(/^ +/, ""); sub(/ +$/, ""); print; exit }' | jr_utf8_cut 200)
+	JR_CLAUDE_FAIL=$1${_fwhy:+：$_fwhy}
+	jr_err "$JR_CLAUDE_FAIL"
+	[ -s "$_fo" ] && sed 's/^/   [stdout] /' "$_fo" >&2
+	[ -s "$_fe" ] && sed 's/^/   [stderr] /' "$_fe" >&2
+	rm -f "$_fo" "$_fe"
+	return 0
 }
 
 # jr_claude_run SYSFILE PROMPT INFILE OUTFILE ERRFILE TIMEOUT
 # 完整旗標先上，被拒才退 bare —— L2 的日蒸餾與 L1 的 capture 共用這一條。
-# 成功且有輸出回 0；其餘一律回 1 且 OUTFILE 清空（清空前先把兩個口的開頭印出來）。
+# 成功且有輸出回 0，JR_CLAUDE_FAIL 為空；其餘一律回 1、OUTFILE 清空、
+# JR_CLAUDE_FAIL 是一行原因。各失敗分支只決定開頭那句，印與記一律交給 jr_claude_fail。
 #
 # ⚠ 結束碼一律用 `cmd || _rc=$?` 接。`if cmd; then …; fi` 之後的 $? 是整個 if
 #   敘述的狀態（條件不成立又沒有 else 時是 0），不是 cmd 的 —— 曾因此把每次失敗
@@ -94,14 +108,15 @@ jr_claude_run() {
 	# SessionEnd hook 看到這個變數就直接退出，蒸餾不會再觸發 capture
 	export JOURNAL_IN_CAPTURE=1
 
+	JR_CLAUDE_FAIL=''
 	_rc=0
 	jr_claude_try full "$_rto" "$_rsys" "$_rpr" "$_rin" "$_rout" "$_rerr" || _rc=$?
 
 	if [ "$_rc" -eq 0 ]; then
 		[ -s "$_rout" ] && return 0
-		jr_err 'claude 回了空字串（exit 0）'
+		_rhead='claude 回了空字串（exit 0）'
 	elif [ "$_rc" -eq 124 ]; then
-		jr_err "claude 逾時（${_rto}s）"
+		_rhead="claude 逾時（${_rto}s）"
 	elif jr_flag_rejected "$_rerr"; then
 		jr_warn "這個 claude 版本不吃某個旗標，退到最小旗標重試（$(sed -n 1p "$_rerr")）"
 		_rc=0
@@ -111,14 +126,14 @@ jr_claude_run() {
 			return 0
 		fi
 		case $_rc in
-			0)   jr_err '最小旗標回了空字串（exit 0）' ;;
-			124) jr_err "最小旗標也逾時（${_rto}s）" ;;
-			*)   jr_err "最小旗標也失敗（exit $_rc）" ;;
+			0)   _rhead='最小旗標回了空字串（exit 0）' ;;
+			124) _rhead="最小旗標也逾時（${_rto}s）" ;;
+			*)   _rhead="最小旗標也失敗（exit $_rc）" ;;
 		esac
 	else
-		jr_err "claude 失敗（exit $_rc）"
+		_rhead="claude 失敗（exit $_rc）"
 	fi
-	jr_claude_dump "$_rout" "$_rerr"
+	jr_claude_fail "$_rhead" "$_rout" "$_rerr"
 	: > "$_rout"
 	return 1
 }
@@ -202,7 +217,8 @@ jr_pick_model() {
 	jr_yaml_get "${JR_CONFIG_YML:-}" "$1" ''
 }
 
-# jr_distill DATE HOST MATERIAL_FILE OUTFILE —— 成功回 0；失敗回非 0 且 OUTFILE 為空
+# jr_distill DATE HOST MATERIAL_FILE OUTFILE —— 成功回 0；失敗回非 0、OUTFILE 為空、
+# JR_CLAUDE_FAIL 是一行原因（約定見 jr_claude_fail）
 jr_distill() {
 	_date=$1; _host=$2; _material=$3; _out=$4
 	JR_CLAUDE_MODEL=$(jr_pick_model model_rollup)
@@ -210,6 +226,7 @@ jr_distill() {
 
 	if [ ! -s "$_material" ]; then
 		jr_debug '素材是空的，不呼叫 claude'
+		JR_CLAUDE_FAIL='素材是空的，沒有呼叫 claude'
 		return 1
 	fi
 

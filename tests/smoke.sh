@@ -4,7 +4,7 @@
 # 全程使用假資料與假 claude，不碰真實環境：
 #   · HOME / JR_CONFIG_HOME / CLAUDE_CONFIG_DIR 全指向 mktemp 目錄
 #   · claude 是 PATH 上的墊片，行為由 CLAUDE_SHIM_MODE 控制
-#     （ok / secret / fail / stdout-fail / empty / slow / reject / reject-fail / reject-slow）
+#     （ok / secret / fail / stdout-fail / quote-fail / empty / slow / reject / reject-fail / reject-slow）
 # 硬需求只有 P1 的地板：sh、git、awk。node / python3 在場時會多跑等價比對。
 #
 # 用法： sh tests/smoke.sh
@@ -127,6 +127,12 @@ case "${CLAUDE_SHIM_MODE:-ok}" in
 		cat > /dev/null
 		printf 'API Error: 400 prompt is too long glpat-FAKEFAKEFAKE12345678\n'
 		exit 1 ;;
+	quote-fail)
+		# 原因裡有雙引號與反斜線（API 錯誤的 JSON 本體常見）—— 驗它寫進
+		# status 的 YAML 雙引號字串時不會把 detail 截斷
+		cat > /dev/null
+		printf 'API Error: 400 {"message":"bad \\"x\\" \\\\ y"}\n'
+		exit 1 ;;
 	slow)  cat > /dev/null; sleep 30 ;;
 esac
 SHIM
@@ -220,6 +226,11 @@ a_rc '備用逾時：被踢掉回 124（與 coreutils timeout 一致）' $rc 124
 _fb 5 sh -c 'exit 3'
 a_rc '備用逾時：自己結束時照原本的結束碼' $? 3
 a_eq '  沒留下逾時記號檔' "$(ls "$T/u" | grep -c '^jr_timeout\.')" '0'
+
+a_eq 'utf8_cut 切在字中間就整個字丟掉' "$(printf '中文字\n' | jr_utf8_cut 4)" '中'
+a_eq 'utf8_cut 剛好切在字邊界時整字保留' "$(printf '中文字\n' | jr_utf8_cut 6)" '中文'
+a_eq 'utf8_cut 4 位元組的字切在中間' "$(printf 'ab😀c\n' | jr_utf8_cut 5)" 'ab'
+a_eq 'utf8_cut 沒超過就原樣' "$(printf 'abc\n' | jr_utf8_cut 10)" 'abc'
 
 # ================================================================ 1 · init
 
@@ -337,6 +348,7 @@ a_grep '  佔位 + generate-failed' "$DAILY" 'status: generate-failed'
 a_grep '  失敗不靜默漏' "$DAILY" '生成失敗'
 a_grep '  訊息帶真正的結束碼' "$T/fail.log" 'claude 失敗（exit 1）'
 a_grep '  stderr 的原因有印出' "$T/fail.log" '[stderr] boom'
+a_grep '  日誌檔佔位寫出原因（D22）' "$DAILY" '生成失敗：claude 失敗（exit 1）：boom'
 
 MODE=stdout-fail J rollup 2026-07-15 > "$T/stdout-fail.log" 2>&1
 a_nz '原因寫在 stdout 的失敗 → exit 非零' $?
@@ -345,11 +357,17 @@ a_grep '  stdout 的原因在清空前印出' "$T/stdout-fail.log" '[stdout] API
 a_grep '  印出前過機密 gate' "$T/stdout-fail.log" '«REDACTED»'
 a_ngrep '  假 token 沒有漏到日誌' "$T/stdout-fail.log" 'glpat-FAKEFAKEFAKE12345678'
 a_grep '  佔位 + generate-failed' "$DAILY" 'status: generate-failed'
+a_grep '  日誌檔佔位寫出 stdout 的原因' "$DAILY" '生成失敗：claude 失敗（exit 1）：API Error: 400 prompt is too long «REDACTED»'
+a_ngrep '  日誌檔沒漏假 token' "$DAILY" 'glpat-FAKEFAKEFAKE12345678'
+# 紀錄與 stderr 是同一行字，不是各寫各的（stderr 沒印出來時保證比對失敗）
+_said=$(sed -n 's/^✖  //p' "$T/stdout-fail.log" | head -1)
+a_grep '  日誌檔寫的就是 stderr 印的那一行' "$DAILY" "生成失敗：${_said:-（stderr 沒印出原因）}"
 
 MODE=empty J rollup 2026-07-15 > "$T/empty.log" 2>&1
 a_nz 'claude 回空 → exit 非零' $?
 a_grep '  空輸出也標 generate-failed' "$DAILY" 'status: generate-failed'
 a_grep '  訊息講明是空字串' "$T/empty.log" 'claude 回了空字串'
+a_grep '  日誌檔佔位寫出空字串' "$DAILY" '生成失敗：claude 回了空字串（exit 0）'
 
 t0=$(date +%s)
 MODE=slow TOUT=2 J rollup 2026-07-15 > "$T/slow.log" 2>&1
@@ -359,6 +377,7 @@ a_nz 'claude 逾時 → exit 非零' $rc
 [ $((t1 - t0)) -lt 15 ] && ok '  逾時真的有踢掉（<15s）' || bad '  逾時真的有踢掉' "花了 $((t1 - t0))s"
 a_grep '  訊息講明是逾時' "$T/slow.log" 'claude 逾時（2s）'
 a_ngrep '  逾時不被當成一般失敗' "$T/slow.log" 'claude 失敗（exit'
+a_grep '  日誌檔佔位寫出逾時' "$DAILY" '生成失敗：claude 逾時（2s）'
 
 MODE=reject J rollup 2026-07-15 > "$T/reject.log" 2>&1
 a_rc '旗標被拒 → 退最小旗標重試成功' $? 0
@@ -369,10 +388,12 @@ MODE=reject-fail J rollup 2026-07-15 > "$T/reject-fail.log" 2>&1
 a_nz '退到 bare 後仍失敗 → exit 非零' $?
 a_grep '  bare 失敗帶真正的結束碼' "$T/reject-fail.log" '最小旗標也失敗（exit 1）'
 a_grep '  bare 的 stdout 原因有印出' "$T/reject-fail.log" '[stdout] API Error: 529 overloaded_error'
+a_grep '  日誌檔佔位寫出 bare 的原因' "$DAILY" '生成失敗：最小旗標也失敗（exit 1）：API Error: 529 overloaded_error'
 
 MODE=reject-slow TOUT=2 J rollup 2026-07-15 > "$T/reject-slow.log" 2>&1
 a_nz '退到 bare 後逾時 → exit 非零' $?
 a_grep '  bare 逾時講明是逾時' "$T/reject-slow.log" '最小旗標也逾時（2s）'
+a_grep '  日誌檔佔位寫出 bare 逾時' "$DAILY" '生成失敗：最小旗標也逾時（2s）'
 
 for _f in fail stdout-fail slow reject-fail reject-slow; do
 	a_ngrep "  $_f：不再把失敗印成 exit 0" "$T/$_f.log" '（exit 0）'
@@ -582,6 +603,16 @@ a_grep 'requires 不滿足 → na 不是 fail' "$STATUS" 'g-na: { state: na, kin
 a_ngrep '<!-- --> 區塊不執行' "$STATUS" 'g-commented'
 a_grep 'agent_health 一併寫入' "$STATUS" 'agent_health: ok'
 a_eq  'check 結果已 commit' "$(git -C "$T/data" status --porcelain | wc -l | tr -d ' ')" '0'
+
+# judge 失敗：原因寫進 detail（D22）。原因裡的雙引號、反斜線若原樣進 YAML 雙引號
+# 字串，aggregate 與 console 讀 detail 時會在第一個引號截斷 —— 整行只能剩一對引號
+MODE=quote-fail J check > "$T/check-fail.log" 2>&1
+a_grep 'judge 失敗時 detail 寫出原因' "$STATUS" \
+	"g-judge: { state: na, kind: judge, detail: \"judge 生成失敗：claude 失敗（exit 1）：API Error: 400 {'message':'bad 'x'"
+a_eq  '  原因裡的雙引號不會弄壞 YAML（整行只剩 detail 那一對）' \
+	"$(grep 'g-judge:' "$STATUS" | tr -cd '"' | wc -c | tr -d ' ')" '2'
+a_eq  '  反斜線也清掉' "$(grep 'g-judge:' "$STATUS" | grep -c '\\')" '0'
+MODE=ok J check > /dev/null 2>&1   # 還原：後面的中心測試讀這份 status
 
 # ================================================================ 9 · 納管（P4）
 

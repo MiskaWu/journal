@@ -360,3 +360,28 @@ jr_write_atomic() {
 	cat > "$_tmp" || { rm -f "$_tmp"; return 1; }
 	mv -f "$_tmp" "$_dest"
 }
+
+# ---------------------------------------------------------------- 截斷
+# jr_utf8_cut N —— stdin 每行截到 N 個位元組，不留半個字。
+# 位元組語意靠 LC_ALL=C；awk 沒有 ord()，判定表用 sprintf("%c") 現場造。
+# 剝掉尾端延續位元組（k 個）後看 lead byte：字完整就整段保留，被切斷才連 lead 丟掉。
+jr_utf8_cut() {
+	LC_ALL=C awk -v n="$1" '
+		BEGIN {
+			for (i = 128; i < 192; i++) CONT = CONT sprintf("%c", i)
+			for (i = 192; i < 245; i++) LEAD = LEAD sprintf("%c", i)
+		}
+		length($0) <= n { print; next }
+		{
+			s = substr($0, 1, n)
+			t = s; k = 0
+			while (k < 3 && length(t) > 0 && index(CONT, substr(t, length(t), 1)) > 0) {
+				t = substr(t, 1, length(t) - 1); k++
+			}
+			b = (length(t) > 0) ? index(LEAD, substr(t, length(t), 1)) : 0
+			if (b == 0) { print s; next }
+			b += 191
+			want = (b >= 240) ? 4 : ((b >= 224) ? 3 : 2)
+			print ((k + 1 == want) ? s : substr(t, 1, length(t) - 1))
+		}'
+}

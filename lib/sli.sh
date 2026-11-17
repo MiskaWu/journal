@@ -233,7 +233,8 @@ EOF
 	export JR_CLAUDE_MODEL
 	if ! jr_claude_run "$_jsys" '請依據以上證據裁決這個目標的狀態。' \
 		"$_jin" "$_jout" "$JR_TMPDIR/judge.err" 120; then
-		jr_sli_set na 'judge 生成失敗'
+		# JR_CLAUDE_FAIL 保證不含雙引號，能原樣進 detail（D22）
+		jr_sli_set na "judge 生成失敗：${JR_CLAUDE_FAIL:-claude 未產出內容}"
 		return 0
 	fi
 	_verdict=$(sed -n 1p "$_jout" | tr -d '\r')

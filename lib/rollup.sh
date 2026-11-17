@@ -171,7 +171,9 @@ jr_cmd_rollup() {
 			_status='generate-failed'
 		}
 	else
-		jr_placeholder_body "生成失敗：claude 未產出內容（$(jr_now_iso)）" > "$_body"
+		# 原因原樣寫進佔位：日誌檔是失敗真正會被看到的地方（timer 沒人盯），
+		# 寫的就是 stderr／systemd journal 裡那一行（D22）
+		jr_placeholder_body "生成失敗：${JR_CLAUDE_FAIL:-claude 未產出內容}（$(jr_now_iso)）" > "$_body"
 		_status='generate-failed'
 	fi
 
