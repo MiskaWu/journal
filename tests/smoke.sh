@@ -306,6 +306,34 @@ if command -v python3 > /dev/null 2>&1; then
 	else
 		bad 'utf8_trim 截斷後仍是合法 UTF-8' '截出斷字'
 	fi
+
+	# 截斷點掃過每一種對齊：上面那條只用 MAXT=100，對 3 位元組的中文剛好不在字邊界，
+	# 曾因此放過「切在字邊界反而留下半個字」的錯。這裡讓截斷點落在 3 位元組與
+	# 4 位元組字（emoji）的每個位置，三個減量器都要產出合法 UTF-8 且沒有替代字元 U+FFFD
+	# （node 用 String#slice 數 UTF-16 單位，曾把 emoji 切成半個代理對、寫出 U+FFFD）。
+	. "$ROOT/lib/transcript.sh"
+	{
+		printf '{"type":"user","isSidechain":false,"message":{"role":"user","content":"中文字中文字中文字"},"timestamp":"2026-07-15T04:00:00.000Z","cwd":"/x","uuid":"g1"}\n'
+		printf '{"type":"user","isSidechain":false,"message":{"role":"user","content":"ab😀cd😀ef"},"timestamp":"2026-07-15T04:01:00.000Z","cwd":"/x","uuid":"g2"}\n'
+	} > "$T/u/edge.jsonl"
+	_u8ok() { python3 -c 'import sys; s = sys.stdin.buffer.read().decode("utf-8"); sys.exit(1 if "�" in s else 0)' 2> /dev/null; }
+	_broken=''; _differ=''
+	for _n in 2 3 4 5 6 7 8 9 10 11; do
+		for r in awk node python3; do
+			case $r in awk) : ;; *) command -v "$r" > /dev/null 2>&1 || continue ;; esac
+			( JR_REDUCER=$r; JR_MAXTEXT=$_n
+			  jr_reduce_file "$T/u/edge.jsonl" p s 2026-07-14T16:00:00Z 2026-07-15T16:00:00Z ) > "$T/u/edge.$r.$_n" 2> /dev/null
+			_u8ok < "$T/u/edge.$r.$_n" || _broken="$_broken $r@$_n"
+		done
+		if [ -f "$T/u/edge.node.$_n" ] && [ -f "$T/u/edge.python3.$_n" ] \
+			&& ! cmp -s "$T/u/edge.node.$_n" "$T/u/edge.python3.$_n"; then
+			_differ="$_differ $_n"
+		fi
+	done
+	[ -z "$_broken" ] && ok '截斷點落在任何位置都是合法 UTF-8、沒有半個字（awk／node／python）' \
+		|| bad '截斷點落在任何位置都是合法 UTF-8、沒有半個字' "壞掉的（減量器@MAXT）:$_broken"
+	[ -z "$_differ" ] && ok '  node 與 python 截斷結果逐位元組相同（都照字數，emoji 不被切半）' \
+		|| bad '  node 與 python 截斷結果逐位元組相同' "不同的 MAXT:$_differ"
 fi
 
 # ================================================================ 3 · rollup 主流程

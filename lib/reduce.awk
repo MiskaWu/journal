@@ -52,8 +52,10 @@ function utf8_trim(s, n,    t, k, lead, want, byte) {
 		if (byte >= 240)      want = 4
 		else if (byte >= 224) want = 3
 		else                  want = 2
-		# 剛好完整就留著；被切斷才連 lead byte 一起丟
-		if (k + 1 != want) t = substr(t, 1, length(t) - 1)
+		# 剛好完整就整段留著 —— 要把剛剛剝掉的延續位元組接回去，也就是原本的前 n 個
+		# 位元組（曾經只回 t，切在字邊界時反而剩一個孤立的 lead byte）；
+		# 被切斷才連 lead byte 一起丟
+		return (k + 1 == want) ? substr(s, 1, n) : substr(t, 1, length(t) - 1)
 	}
 	return t
 }
