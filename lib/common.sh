@@ -310,14 +310,24 @@ jr_lock_release() {
 #
 # 有 timeout 就用；沒有就「背景執行 + 逾時後 kill」（§10）。
 # 用法：jr_timeout SECONDS cmd args...
+# 兩條路的約定一樣：逾時回 124，自己結束照原本的結束碼 —— 呼叫端靠 124 分辨逾時。
+#
+# 備用路徑的兩個坑（tests/smoke.sh「0 · 純函式」咬著）：
+#   · 非互動 shell 沒有工作控制，背景指令的 stdin 會先被換成 /dev/null（POSIX），
+#     `jr_timeout 300 claude … < 素材` 的 claude 會讀到空的。所以先把 stdin
+#     複製到 fd 3，背景指令再從 fd 3 拿回來。
+#   · 被 kill 的子程序回 143／137，不是 124。看門程序動手前先留記號，
+#     有記號就回 124。
 jr_timeout() {
 	_secs=$1; shift
 	if jr_has timeout; then
 		timeout "$_secs" "$@"
 		return $?
 	fi
-	"$@" &
+	{ "$@" 0<&3 3<&- & } 3<&0
 	_child=$!
+	_tmark="${JR_TMPDIR:-/tmp}/jr_timeout.$_child"
+	rm -f "$_tmark"
 	(
 		_i=0
 		while [ "$_i" -lt "$_secs" ]; do
@@ -325,6 +335,7 @@ jr_timeout() {
 			sleep 1
 			_i=$((_i + 1))
 		done
+		: > "$_tmark"
 		kill -TERM "$_child" 2>/dev/null
 		sleep 2
 		kill -KILL "$_child" 2>/dev/null
@@ -333,6 +344,10 @@ jr_timeout() {
 	wait "$_child" 2>/dev/null
 	_rc=$?
 	kill "$_watch" 2>/dev/null
+	if [ -e "$_tmark" ]; then
+		rm -f "$_tmark"
+		_rc=124
+	fi
 	return $_rc
 }
 

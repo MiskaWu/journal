@@ -205,6 +205,22 @@ a_eq 'yaml_section 一般 key 不受影響' \
 	"$(jr_yaml_section "$T/u/map.yml" slug_map | awk -F'\t' '$1 == "normal" { print $2 }')" 'alpha'
 a_eq 'yaml_list 清單照舊' "$(jr_yaml_list "$T/u/map.yml" alist)" 'item1'
 
+# jr_timeout 的備用路徑：沒有 timeout 指令的機器（例如沒裝 coreutils 的 macOS）
+# 走「背景執行 + 逾時後 kill」。這台有 timeout，整套 rollup 測試都碰不到這條路，
+# 只能在子 shell 裡把 jr_has 改成找不到 timeout 來逼它走。
+_fb() { ( jr_has() { [ "$1" != timeout ] && command -v "$1" > /dev/null 2>&1; }; jr_timeout "$@" ); }
+printf 'material\n' > "$T/u/fb.in"
+a_eq '備用逾時：背景指令讀得到導入的 stdin（不是 /dev/null）' "$(_fb 5 cat < "$T/u/fb.in")" 'material'
+t0=$(date +%s)
+_fb 1 sleep 10
+rc=$?
+t1=$(date +%s)
+a_rc '備用逾時：被踢掉回 124（與 coreutils timeout 一致）' $rc 124
+[ $((t1 - t0)) -lt 6 ] && ok '  真的有踢掉（<6s）' || bad '  真的有踢掉' "花了 $((t1 - t0))s"
+_fb 5 sh -c 'exit 3'
+a_rc '備用逾時：自己結束時照原本的結束碼' $? 3
+a_eq '  沒留下逾時記號檔' "$(ls "$T/u" | grep -c '^jr_timeout\.')" '0'
+
 # ================================================================ 1 · init
 
 printf '\n== 1 · init --local ==\n'
